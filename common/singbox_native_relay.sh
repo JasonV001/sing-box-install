@@ -55,12 +55,27 @@ configure_native_relay() {
     
     # 检查是否有节点
     local config_file="${CONFIG_DIR}/config.json"
+    
+    # 尝试多个可能的配置文件路径
     if [[ ! -f "$config_file" ]]; then
-        print_error "Sing-box 配置文件不存在"
-        echo ""
-        print_info "请先添加节点"
-        read -p "按回车键继续..."
-        return
+        if [[ -f "/etc/sing-box/config.json" ]]; then
+            config_file="/etc/sing-box/config.json"
+            CONFIG_DIR="/etc/sing-box"
+        elif [[ -f "/usr/local/etc/sing-box/config.json" ]]; then
+            config_file="/usr/local/etc/sing-box/config.json"
+            CONFIG_DIR="/usr/local/etc/sing-box"
+        else
+            print_error "Sing-box 配置文件不存在"
+            echo ""
+            echo -e "${YELLOW}尝试的路径:${NC}"
+            echo "  • /usr/local/etc/sing-box/config.json"
+            echo "  • /etc/sing-box/config.json"
+            echo ""
+            print_info "请先添加节点"
+            echo ""
+            read -p "按回车键继续..."
+            return
+        fi
     fi
     
     local outbound_count=$(jq '.outbounds | length' "$config_file" 2>/dev/null || echo "0")
