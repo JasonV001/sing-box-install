@@ -136,11 +136,18 @@ configure_relay_chain() {
     # 列出所有节点
     echo -e "${CYAN}当前节点列表:${NC}"
     echo ""
+    echo -e "${YELLOW}配置文件: ${config_file}${NC}"
+    echo ""
     
     local index=1
     declare -a node_tags
     declare -a node_types
     declare -a node_servers
+    
+    # 调试：显示所有 outbound
+    echo -e "${YELLOW}调试信息 - 所有 outbound:${NC}"
+    jq -r '.outbounds[] | "  \(.tag) (\(.type)) - server: \(.server // "N/A")"' "$config_file"
+    echo ""
     
     while IFS='|' read -r tag type server port; do
         # 跳过系统 outbound (direct, block, dns-out 等)
