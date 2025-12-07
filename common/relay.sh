@@ -284,23 +284,71 @@ add_iptables_relay() {
     read -p "协议 [tcp/udp/both] (默认both): " protocol
     protocol=${protocol:-both}
     
+    # 检查并安装 iptables
+    if ! command -v iptables &>/dev/null; then
+        print_warning "检测到 iptables 未安装"
+        read -p "是否现在安装 iptables? [Y/n]: " install_iptables
+        if [[ "$install_iptables" =~ ^[Nn]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 1
+        fi
+        
+        print_info "正在安装 iptables..."
+        if [[ -f /etc/os-release ]]; then
+            . /etc/os-release
+            if [[ "$ID" =~ (debian|ubuntu) ]]; then
+                apt-get update -qq && apt-get install -y iptables
+            elif [[ "$ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
+                yum install -y iptables iptables-services
+                systemctl enable iptables 2>/dev/null
+            fi
+        fi
+        
+        if command -v iptables &>/dev/null; then
+            print_success "iptables 安装完成"
+        else
+            print_error "iptables 安装失败"
+            read -p "按回车键继续..."
+            return 1
+        fi
+    else
+        print_success "iptables 已安装"
+    fi
+    echo ""
+    
     # 检查端口是否被占用
     if ss -tuln | grep -q ":$local_port "; then
         print_error "端口 $local_port 已被占用"
         return 1
     fi
     
+    # 启用 IP 转发
+    if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf 2>/dev/null; then
+        print_info "启用 IP 转发..."
+        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+        sysctl -p > /dev/null 2>&1
+    fi
+    
     # 添加转发规则
     if [[ "$protocol" == "both" || "$protocol" == "tcp" ]]; then
-        iptables -t nat -A PREROUTING -p tcp --dport $local_port -j DNAT --to-destination ${target_ip}:${target_port}
-        iptables -t nat -A POSTROUTING -p tcp -d $target_ip --dport $target_port -j MASQUERADE
-        print_success "TCP 转发规则已添加"
+        if iptables -t nat -A PREROUTING -p tcp --dport "$local_port" -j DNAT --to-destination "${target_ip}:${target_port}" && \
+           iptables -t nat -A POSTROUTING -p tcp -d "$target_ip" --dport "$target_port" -j MASQUERADE; then
+            print_success "TCP 转发规则已添加"
+        else
+            print_error "TCP 转发规则添加失败"
+            return 1
+        fi
     fi
     
     if [[ "$protocol" == "both" || "$protocol" == "udp" ]]; then
-        iptables -t nat -A PREROUTING -p udp --dport $local_port -j DNAT --to-destination ${target_ip}:${target_port}
-        iptables -t nat -A POSTROUTING -p udp -d $target_ip --dport $target_port -j MASQUERADE
-        print_success "UDP 转发规则已添加"
+        if iptables -t nat -A PREROUTING -p udp --dport "$local_port" -j DNAT --to-destination "${target_ip}:${target_port}" && \
+           iptables -t nat -A POSTROUTING -p udp -d "$target_ip" --dport "$target_port" -j MASQUERADE; then
+            print_success "UDP 转发规则已添加"
+        else
+            print_error "UDP 转发规则添加失败"
+            return 1
+        fi
     fi
     
     # 保存规则
@@ -343,13 +391,52 @@ add_dnat_relay() {
     read -p "请输入目标IP地址: " target_ip
     read -p "请输入目标端口: " target_port
     
+    # 检查并安装 iptables
+    if ! command -v iptables &>/dev/null; then
+        print_warning "检测到 iptables 未安装"
+        read -p "是否现在安装 iptables? [Y/n]: " install_iptables
+        if [[ "$install_iptables" =~ ^[Nn]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 1
+        fi
+        
+        print_info "正在安装 iptables..."
+        if [[ -f /etc/os-release ]]; then
+            . /etc/os-release
+            if [[ "$ID" =~ (debian|ubuntu) ]]; then
+                apt-get update -qq && apt-get install -y iptables
+            elif [[ "$ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
+                yum install -y iptables iptables-services
+                systemctl enable iptables 2>/dev/null
+            fi
+        fi
+        
+        if ! command -v iptables &>/dev/null; then
+            print_error "iptables 安装失败"
+            read -p "按回车键继续..."
+            return 1
+        fi
+        print_success "iptables 安装完成"
+    fi
+    
     # 启用IP转发
-    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
-    sysctl -p > /dev/null 2>&1
+    if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf 2>/dev/null; then
+        print_info "启用 IP 转发..."
+        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+        sysctl -p > /dev/null 2>&1
+    fi
     
     # 添加DNAT规则
-    iptables -t nat -A PREROUTING -p tcp --dport $local_port -j DNAT --to-destination ${target_ip}:${target_port}
-    iptables -t nat -A PREROUTING -p udp --dport $local_port -j DNAT --to-destination ${target_ip}:${target_port}
+    if ! iptables -t nat -A PREROUTING -p tcp --dport "$local_port" -j DNAT --to-destination "${target_ip}:${target_port}"; then
+        print_error "TCP DNAT 规则添加失败"
+        return 1
+    fi
+    
+    if ! iptables -t nat -A PREROUTING -p udp --dport "$local_port" -j DNAT --to-destination "${target_ip}:${target_port}"; then
+        print_error "UDP DNAT 规则添加失败"
+        return 1
+    fi
     iptables -t nat -A POSTROUTING -j MASQUERADE
     
     save_relay_rule "dnat" "$local_port" "$target_ip" "$target_port" "both"
