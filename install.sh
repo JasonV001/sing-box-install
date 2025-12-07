@@ -90,7 +90,7 @@ wget -q "${BASE_URL}/test.sh" -O test.sh || echo -e "${YELLOW}test.sh 下载失�
 
 # 下载通用模块
 echo -e "${CYAN}下载通用模块...${NC}"
-for module in install relay argo view service uninstall validation singbox_native_relay; do
+for module in install relay argo view service uninstall; do
     wget -q "${BASE_URL}/common/${module}.sh" -O "common/${module}.sh" || echo -e "${YELLOW}common/${module}.sh 下载失败${NC}"
 done
 
