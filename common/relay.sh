@@ -1050,12 +1050,30 @@ install_gost() {
     fi
     
     local version="$latest_version"
+    local version_num="${version#v}"
+    
+    # 根据版本号确定文件格式
+    # v2.12.0+ 使用新格式: gost_2.12.0_linux_amd64.tar.gz
+    # v2.11.x 使用旧格式: gost-linux-amd64-2.11.5.gz
+    local filename
+    local is_tarball=false
+    
+    # 比较版本号 (简单比较，假设 2.12+ 使用新格式)
+    if [[ "${version_num%%.*}" -ge 2 ]] && [[ "${version_num#*.}" -ge 12 ]]; then
+        # 新格式 (v2.12.0+)
+        filename="gost_${version_num}_${gost_arch}.tar.gz"
+        is_tarball=true
+    else
+        # 旧格式 (v2.11.x)
+        filename="gost-${gost_arch}-${version_num}.gz"
+        is_tarball=false
+    fi
     
     # 定义多个下载源
     local download_urls=(
-        "https://github.com/ginuerzh/gost/releases/download/${version}/gost-${gost_arch}-${version#v}.gz"
-        "https://ghproxy.com/https://github.com/ginuerzh/gost/releases/download/${version}/gost-${gost_arch}-${version#v}.gz"
-        "https://mirror.ghproxy.com/https://github.com/ginuerzh/gost/releases/download/${version}/gost-${gost_arch}-${version#v}.gz"
+        "https://github.com/ginuerzh/gost/releases/download/${version}/${filename}"
+        "https://ghproxy.com/https://github.com/ginuerzh/gost/releases/download/${version}/${filename}"
+        "https://mirror.ghproxy.com/https://github.com/ginuerzh/gost/releases/download/${version}/${filename}"
     )
     
     print_info "下载 Gost ${version}..."
@@ -1068,14 +1086,14 @@ install_gost() {
     for url in "${download_urls[@]}"; do
         echo "  尝试: $(echo "$url" | cut -d'/' -f3)"
         
-        if wget -q --timeout=30 --tries=2 -O gost.gz "$url" 2>/dev/null; then
-            if [[ -f gost.gz ]] && [[ $(stat -f%z gost.gz 2>/dev/null || stat -c%s gost.gz 2>/dev/null) -gt 1000 ]]; then
+        if wget -q --timeout=30 --tries=2 -O "$filename" "$url" 2>/dev/null; then
+            if [[ -f "$filename" ]] && [[ $(stat -f%z "$filename" 2>/dev/null || stat -c%s "$filename" 2>/dev/null) -gt 1000 ]]; then
                 print_success "下载成功"
                 download_success=true
                 break
             else
                 print_warning "下载的文件无效，尝试下一个源..."
-                rm -f gost.gz
+                rm -f "$filename"
             fi
         else
             print_warning "下载失败，尝试下一个源..."
@@ -1089,9 +1107,14 @@ install_gost() {
         echo ""
         echo -e "${YELLOW}手动安装方法:${NC}"
         echo "1. 访问: https://github.com/ginuerzh/gost/releases"
-        echo "2. 下载: gost-${gost_arch}-${version#v}.gz"
-        echo "3. 解压: gunzip gost-${gost_arch}-${version#v}.gz"
-        echo "4. 安装: mv gost-${gost_arch}-${version#v} /usr/local/bin/gost"
+        echo "2. 下载: ${filename}"
+        if [[ "$is_tarball" == true ]]; then
+            echo "3. 解压: tar -xzf ${filename}"
+            echo "4. 安装: mv gost /usr/local/bin/gost"
+        else
+            echo "3. 解压: gunzip ${filename}"
+            echo "4. 安装: mv gost-${gost_arch}-${version_num} /usr/local/bin/gost"
+        fi
         echo "5. 授权: chmod +x /usr/local/bin/gost"
         echo ""
         return 1
@@ -1099,28 +1122,73 @@ install_gost() {
     
     # 解压和安装
     print_info "正在安装..."
-    if gunzip gost.gz 2>/dev/null; then
-        chmod +x gost
-        mv gost /usr/local/bin/gost
-        mkdir -p /etc/gost
-        
-        # 验证安装
-        if /usr/local/bin/gost -V &>/dev/null; then
-            print_success "Gost 安装完成"
-            cd - >/dev/null
-            rm -rf "$temp_dir"
-            return 0
+    
+    if [[ "$is_tarball" == true ]]; then
+        # 新格式: tar.gz
+        if tar -xzf "$filename" 2>/dev/null; then
+            # tar.gz 解压后会有一个 gost 可执行文件
+            if [[ -f "gost" ]]; then
+                chmod +x gost
+                mv gost /usr/local/bin/gost
+                mkdir -p /etc/gost
+                
+                # 验证安装
+                if /usr/local/bin/gost -V &>/dev/null; then
+                    print_success "Gost 安装完成"
+                    cd - >/dev/null
+                    rm -rf "$temp_dir"
+                    return 0
+                else
+                    print_error "Gost 安装后无法运行"
+                    cd - >/dev/null
+                    rm -rf "$temp_dir"
+                    return 1
+                fi
+            else
+                print_error "解压后未找到 gost 文件"
+                cd - >/dev/null
+                rm -rf "$temp_dir"
+                return 1
+            fi
         else
-            print_error "Gost 安装后无法运行"
+            print_error "解压失败"
             cd - >/dev/null
             rm -rf "$temp_dir"
             return 1
         fi
     else
-        print_error "解压失败"
-        cd - >/dev/null
-        rm -rf "$temp_dir"
-        return 1
+        # 旧格式: .gz
+        if gunzip "$filename" 2>/dev/null; then
+            local extracted_file="${filename%.gz}"
+            if [[ -f "$extracted_file" ]]; then
+                chmod +x "$extracted_file"
+                mv "$extracted_file" /usr/local/bin/gost
+                mkdir -p /etc/gost
+                
+                # 验证安装
+                if /usr/local/bin/gost -V &>/dev/null; then
+                    print_success "Gost 安装完成"
+                    cd - >/dev/null
+                    rm -rf "$temp_dir"
+                    return 0
+                else
+                    print_error "Gost 安装后无法运行"
+                    cd - >/dev/null
+                    rm -rf "$temp_dir"
+                    return 1
+                fi
+            else
+                print_error "解压后未找到文件"
+                cd - >/dev/null
+                rm -rf "$temp_dir"
+                return 1
+            fi
+        else
+            print_error "解压失败"
+            cd - >/dev/null
+            rm -rf "$temp_dir"
+            return 1
+        fi
     fi
 }
 
