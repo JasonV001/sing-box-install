@@ -202,7 +202,9 @@ uninstall_relay_config() {
     if command -v netfilter-persistent &>/dev/null; then
         netfilter-persistent save 2>/dev/null
     elif command -v iptables-save &>/dev/null; then
-        iptables-save > /etc/iptables/rules.v4 2>/dev/null
+        # 确保目录存在
+        mkdir -p /etc/iptables 2>/dev/null
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
     fi
     
     # 删除中转配置目录
