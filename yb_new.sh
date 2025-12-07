@@ -412,7 +412,7 @@ main() {
                 # 卸载
                 if [[ -f "${SCRIPT_DIR}/common/uninstall.sh" ]]; then
                     source "${SCRIPT_DIR}/common/uninstall.sh"
-                    uninstall_all
+                    uninstall_menu
                 else
                     print_error "找不到卸载模块: ${SCRIPT_DIR}/common/uninstall.sh"
                     read -p "按回车键继续..."

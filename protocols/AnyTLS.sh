@@ -97,14 +97,17 @@ EOF
     
     local anytls_inbound=$(cat <<EOF
 {
-  "type": "shadowsocks",
+  "type": "anytls",
   "tag": "anytls-in-${port}",
   "listen": "::",
   "listen_port": ${port},
-  "method": "2022-blake3-aes-128-gcm",
-  "password": "${password}",
-  "multiplex": {
-    "enabled": true
+  "users": [{"password": "${password}"}],
+  "padding_scheme": [],
+  "tls": {
+    "enabled": true,
+    "server_name": "${domain}",
+    "certificate_path": "${cert_dir}/cert.pem",
+    "key_path": "${cert_dir}/private.key"
   }
 }
 EOF
@@ -123,9 +126,7 @@ generate_anytls_link() {
     local password=$2
     local domain=$3
     
-    local method="2022-blake3-aes-128-gcm"
-    local userinfo=$(echo -n "${method}:${password}" | base64 -w0)
-    local link="ss://${userinfo}@${SERVER_IP}:${port}#AnyTLS-${SERVER_IP}"
+    local link="anytls://${password}@${SERVER_IP}:${port}?security=tls&fp=chrome&insecure=1&sni=${domain}&type=tcp#AnyTLS-${SERVER_IP}"
     
     mkdir -p "${LINK_DIR}"
     local link_file="${LINK_DIR}/anytls_${port}.txt"
@@ -137,20 +138,22 @@ AnyTLS 节点信息
 服务器: ${SERVER_IP}
 端口: ${port}
 密码: ${password}
-加密方式: ${method}
-域名: ${domain}
+SNI: ${domain}
+自签证书: ${domain}
 
 分享链接:
 ${link}
 
-Clash 配置:
+Clash Meta 配置:
 proxies:
   - name: AnyTLS-${SERVER_IP}
-    type: ss
+    type: anytls
     server: ${SERVER_IP}
     port: ${port}
-    cipher: ${method}
     password: ${password}
+    sni: ${domain}
+    skip-cert-verify: true
+    client-fingerprint: chrome
 
 ========================================
 EOF

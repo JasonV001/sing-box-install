@@ -9,41 +9,95 @@ view_nodes() {
     echo ""
     
     local config_file="${CONFIG_DIR}/config.json"
+    local has_nodes=false
     
-    if [[ ! -f "$config_file" ]]; then
-        print_warning "配置文件不存在，请先配置节点"
-        read -p "按回车键继续..."
-        return
+    # 检查 Sing-box 节点
+    if [[ -f "$config_file" ]]; then
+        local inbound_count=$(jq '.inbounds | length' "$config_file" 2>/dev/null || echo "0")
+        
+        if [[ "$inbound_count" -gt 0 ]]; then
+            has_nodes=true
+            echo -e "${GREEN}【Sing-box 节点】${NC}"
+            echo ""
+            
+            # 遍历所有inbounds
+            local index=1
+            jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file" | while IFS='|' read -r type tag port; do
+                echo -e "${CYAN}[$index]${NC} ${GREEN}$type${NC}"
+                echo "    标签: $tag"
+                echo "    端口: $port"
+                
+                # 查找对应的链接文件
+                local link_files=$(find "${LINK_DIR}" -name "*_${port}.txt" ! -name "argo_*" 2>/dev/null)
+                if [[ -n "$link_files" ]]; then
+                    echo "    链接文件: $link_files"
+                fi
+                
+                echo ""
+                ((index++))
+            done
+        fi
     fi
     
-    # 检查是否有inbounds
-    local inbound_count=$(jq '.inbounds | length' "$config_file" 2>/dev/null || echo "0")
+    # 检查 Argo 隧道节点
+    if [[ -d "${LINK_DIR}" ]]; then
+        local argo_links=$(find "${LINK_DIR}" -name "argo_*.txt" 2>/dev/null)
+        if [[ -n "$argo_links" ]]; then
+            has_nodes=true
+            echo -e "${GREEN}【Argo 隧道节点】${NC}"
+            echo ""
+            
+            local argo_index=1
+            for argo_file in $argo_links; do
+                local filename=$(basename "$argo_file")
+                echo -e "${CYAN}[A$argo_index]${NC} ${GREEN}Argo Tunnel${NC}"
+                
+                # 提取域名和端口信息
+                if [[ "$filename" =~ argo_quick_([0-9]+)\.txt ]]; then
+                    local port="${BASH_REMATCH[1]}"
+                    local domain=$(grep "临时域名:" "$argo_file" | awk '{print $2}')
+                    echo "    类型: Quick Tunnel (临时域名)"
+                    echo "    端口: $port"
+                    if [[ -n "$domain" ]]; then
+                        echo "    域名: $domain"
+                    fi
+                elif [[ "$filename" =~ argo_token_([0-9]+)\.txt ]]; then
+                    local port="${BASH_REMATCH[1]}"
+                    local domain=$(grep "域名:" "$argo_file" | head -1 | awk '{print $2}')
+                    echo "    类型: Token 认证"
+                    echo "    端口: $port"
+                    if [[ -n "$domain" ]]; then
+                        echo "    域名: $domain"
+                    fi
+                elif [[ "$filename" =~ argo_json_([0-9]+)\.txt ]]; then
+                    local port="${BASH_REMATCH[1]}"
+                    local domain=$(grep "域名:" "$argo_file" | head -1 | awk '{print $2}')
+                    echo "    类型: JSON 认证"
+                    echo "    端口: $port"
+                    if [[ -n "$domain" ]]; then
+                        echo "    域名: $domain"
+                    fi
+                fi
+                
+                echo "    链接文件: $argo_file"
+                
+                # 显示节点链接
+                local node_link_file="${LINK_DIR}/argo_node_${port}.txt"
+                if [[ -f "$node_link_file" ]]; then
+                    echo "    节点链接: $(cat "$node_link_file")"
+                fi
+                
+                echo ""
+                ((argo_index++))
+            done
+        fi
+    fi
     
-    if [[ "$inbound_count" -eq 0 ]]; then
+    if [[ "$has_nodes" == false ]]; then
         print_warning "暂无配置的节点"
         read -p "按回车键继续..."
         return
     fi
-    
-    echo -e "${GREEN}当前配置的节点:${NC}"
-    echo ""
-    
-    # 遍历所有inbounds
-    local index=1
-    jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file" | while IFS='|' read -r type tag port; do
-        echo -e "${CYAN}[$index]${NC} ${GREEN}$type${NC}"
-        echo "    标签: $tag"
-        echo "    端口: $port"
-        
-        # 查找对应的链接文件
-        local link_files=$(find "${LINK_DIR}" -name "*_${port}.txt" 2>/dev/null)
-        if [[ -n "$link_files" ]]; then
-            echo "    链接文件: $link_files"
-        fi
-        
-        echo ""
-        ((index++))
-    done
     
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"

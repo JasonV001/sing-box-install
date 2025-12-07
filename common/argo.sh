@@ -135,11 +135,114 @@ EOF
     if [[ -n "$temp_domain" ]]; then
         print_success "临时域名: ${temp_domain}"
         echo "$temp_domain" > "${ARGO_DIR}/domain.txt"
+        
+        # 生成节点链接
+        generate_argo_node_link "$temp_domain" "$local_port"
+        
+        # 保存到文件
+        mkdir -p "${LINK_DIR}"
+        cat > "${LINK_DIR}/argo_quick_${local_port}.txt" << EOF
+========================================
+Argo Quick Tunnel 信息
+========================================
+本地端口: ${local_port}
+临时域名: ${temp_domain}
+完整地址: https://${temp_domain}
+
+节点链接:
+$(cat "${LINK_DIR}/argo_node_${local_port}.txt" 2>/dev/null || echo "未生成节点链接")
+
+注意: 临时域名会在重启后变化
+日志文件: ${ARGO_DIR}/argo.log
+
+使用方法:
+1. 确保本地服务运行在端口 ${local_port}
+2. 通过 https://${temp_domain} 访问
+3. 使用上方节点链接导入客户端
+========================================
+EOF
+        echo ""
+        cat "${LINK_DIR}/argo_quick_${local_port}.txt"
     else
         print_warning "未能获取临时域名，请查看日志: ${ARGO_DIR}/argo.log"
     fi
     
+    echo ""
     read -p "按回车键继续..."
+}
+
+# 生成 Argo 节点链接
+generate_argo_node_link() {
+    local domain=$1
+    local port=$2
+    
+    # 检查本地端口对应的协议配置
+    local config_file="${CONFIG_DIR}/config.json"
+    
+    if [[ ! -f "$config_file" ]]; then
+        print_warning "配置文件不存在，无法生成节点链接"
+        return 1
+    fi
+    
+    # 查找对应端口的inbound配置
+    local inbound=$(jq -r ".inbounds[] | select(.listen_port == $port)" "$config_file" 2>/dev/null)
+    
+    if [[ -z "$inbound" ]]; then
+        print_warning "未找到端口 $port 的配置"
+        return 1
+    fi
+    
+    local protocol=$(echo "$inbound" | jq -r '.type')
+    local tag=$(echo "$inbound" | jq -r '.tag')
+    
+    # 根据协议生成链接
+    case $protocol in
+        vless)
+            local uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
+            if [[ -n "$uuid" ]]; then
+                local link="vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}#Argo-${tag}"
+                echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
+                print_success "已生成 VLESS 节点链接"
+            fi
+            ;;
+        trojan)
+            local password=$(echo "$inbound" | jq -r '.users[0].password // empty')
+            if [[ -n "$password" ]]; then
+                local link="trojan://${password}@${domain}:443?security=tls&sni=${domain}&type=ws&host=${domain}#Argo-${tag}"
+                echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
+                print_success "已生成 Trojan 节点链接"
+            fi
+            ;;
+        vmess)
+            local uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
+            if [[ -n "$uuid" ]]; then
+                local vmess_json=$(cat <<EOF
+{
+  "v": "2",
+  "ps": "Argo-${tag}",
+  "add": "${domain}",
+  "port": "443",
+  "id": "${uuid}",
+  "aid": "0",
+  "net": "ws",
+  "type": "none",
+  "host": "${domain}",
+  "path": "/",
+  "tls": "tls",
+  "sni": "${domain}"
+}
+EOF
+)
+                local link="vmess://$(echo -n "$vmess_json" | base64 -w 0)"
+                echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
+                print_success "已生成 VMess 节点链接"
+            fi
+            ;;
+        *)
+            print_warning "协议 $protocol 暂不支持生成 Argo 节点链接"
+            echo "https://${domain}" > "${LINK_DIR}/argo_node_${port}.txt"
+            ;;
+    esac
 }
 
 # Token 认证
@@ -159,6 +262,10 @@ install_argo_token() {
         print_error "Token 不能为空"
         return 1
     fi
+    
+    read -p "请输入绑定的域名: " tunnel_domain
+    read -p "请输入本地服务端口 (默认443): " local_port
+    local_port=${local_port:-443}
     
     # 创建systemd服务
     cat > /etc/systemd/system/argo-tunnel.service << EOF
@@ -180,11 +287,40 @@ EOF
     systemctl enable argo-tunnel
     systemctl start argo-tunnel
     
-    # 保存token
+    # 保存token和域名
     echo "$argo_token" > "${ARGO_DIR}/token.txt"
+    echo "$tunnel_domain" > "${ARGO_DIR}/domain.txt"
     chmod 600 "${ARGO_DIR}/token.txt"
     
+    # 生成节点链接
+    if [[ -n "$tunnel_domain" ]]; then
+        generate_argo_node_link "$tunnel_domain" "$local_port"
+        
+        # 保存信息
+        mkdir -p "${LINK_DIR}"
+        cat > "${LINK_DIR}/argo_token_${local_port}.txt" << EOF
+========================================
+Argo Tunnel (Token) 信息
+========================================
+域名: ${tunnel_domain}
+本地端口: ${local_port}
+完整地址: https://${tunnel_domain}
+
+节点链接:
+$(cat "${LINK_DIR}/argo_node_${local_port}.txt" 2>/dev/null || echo "未生成节点链接")
+
+使用方法:
+1. 确保本地服务运行在端口 ${local_port}
+2. 通过 https://${tunnel_domain} 访问
+3. 使用上方节点链接导入客户端
+========================================
+EOF
+        echo ""
+        cat "${LINK_DIR}/argo_token_${local_port}.txt"
+    fi
+    
     print_success "Argo Tunnel (Token) 已启动"
+    echo ""
     read -p "按回车键继续..."
 }
 
@@ -254,8 +390,38 @@ EOF
     systemctl enable argo-tunnel
     systemctl start argo-tunnel
     
+    # 生成节点链接
+    generate_argo_node_link "$tunnel_domain" "$local_port"
+    
+    # 保存信息
+    mkdir -p "${LINK_DIR}"
+    cat > "${LINK_DIR}/argo_json_${local_port}.txt" << EOF
+========================================
+Argo Tunnel (JSON) 信息
+========================================
+隧道名称: ${tunnel_name}
+隧道 UUID: ${tunnel_uuid}
+域名: ${tunnel_domain}
+本地端口: ${local_port}
+完整地址: https://${tunnel_domain}
+
+节点链接:
+$(cat "${LINK_DIR}/argo_node_${local_port}.txt" 2>/dev/null || echo "未生成节点链接")
+
+配置文件: ${ARGO_CONFIG}
+凭证文件: ~/.cloudflared/${tunnel_uuid}.json
+
+使用方法:
+1. 确保本地服务运行在端口 ${local_port}
+2. 通过 https://${tunnel_domain} 访问
+3. 使用上方节点链接导入客户端
+========================================
+EOF
+    
     print_success "Argo Tunnel (JSON) 已启动"
-    print_info "域名: ${tunnel_domain}"
+    echo ""
+    cat "${LINK_DIR}/argo_json_${local_port}.txt"
+    echo ""
     read -p "按回车键继续..."
 }
 
