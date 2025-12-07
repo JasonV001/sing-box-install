@@ -62,9 +62,17 @@ load_protocol_module() {
     
     if [[ -f "$module_file" ]]; then
         source "$module_file"
-        return 0
+        if [[ $? -eq 0 ]]; then
+            return 0
+        else
+            print_error "加载协议模块 ${protocol}.sh 失败"
+            read -p "按回车键继续..."
+            return 1
+        fi
     else
-        print_error "协议模块 ${protocol}.sh 不存在"
+        print_error "协议模块不存在: ${module_file}"
+        print_info "PROTOCOLS_DIR=${PROTOCOLS_DIR}"
+        read -p "按回车键继续..."
         return 1
     fi
 }
@@ -204,19 +212,80 @@ show_protocol_menu() {
     read -p "请选择协议 [0-11]: " protocol_choice
     
     case $protocol_choice in
-        1) load_protocol_module "SOCKS" && configure_socks ;;
-        2) load_protocol_module "HTTP" && configure_http ;;
-        3) load_protocol_module "AnyTLS" && configure_anytls ;;
-        4) load_protocol_module "TUIC" && configure_tuic ;;
-        5) load_protocol_module "Juicity" && configure_juicity ;;
-        6) load_protocol_module "Hysteria2" && configure_hysteria2 ;;
-        7) load_protocol_module "VLESS" && configure_vless ;;
-        8) load_protocol_module "Trojan" && configure_trojan ;;
-        9) load_protocol_module "VMess" && configure_vmess ;;
-        10) load_protocol_module "ShadowTLS" && configure_shadowtls ;;
-        11) load_protocol_module "Shadowsocks" && configure_shadowsocks ;;
-        0) return ;;
-        *) print_error "无效的选择"; sleep 2; show_protocol_menu ;;
+        1) 
+            if load_protocol_module "SOCKS"; then
+                configure_socks
+            fi
+            show_protocol_menu
+            ;;
+        2) 
+            if load_protocol_module "HTTP"; then
+                configure_http
+            fi
+            show_protocol_menu
+            ;;
+        3) 
+            if load_protocol_module "AnyTLS"; then
+                configure_anytls
+            fi
+            show_protocol_menu
+            ;;
+        4) 
+            if load_protocol_module "TUIC"; then
+                configure_tuic
+            fi
+            show_protocol_menu
+            ;;
+        5) 
+            if load_protocol_module "Juicity"; then
+                configure_juicity
+            fi
+            show_protocol_menu
+            ;;
+        6) 
+            if load_protocol_module "Hysteria2"; then
+                configure_hysteria2
+            fi
+            show_protocol_menu
+            ;;
+        7) 
+            if load_protocol_module "VLESS"; then
+                configure_vless
+            fi
+            show_protocol_menu
+            ;;
+        8) 
+            if load_protocol_module "Trojan"; then
+                configure_trojan
+            fi
+            show_protocol_menu
+            ;;
+        9) 
+            if load_protocol_module "VMess"; then
+                configure_vmess
+            fi
+            show_protocol_menu
+            ;;
+        10) 
+            if load_protocol_module "ShadowTLS"; then
+                configure_shadowtls
+            fi
+            show_protocol_menu
+            ;;
+        11) 
+            if load_protocol_module "Shadowsocks"; then
+                configure_shadowsocks
+            fi
+            show_protocol_menu
+            ;;
+        0) 
+            return 
+            ;;
+        *) 
+            print_error "无效的选择"
+            sleep 2
+            show_protocol_menu
+            ;;
     esac
 }
 
@@ -284,7 +353,8 @@ main() {
                     source "${SCRIPT_DIR}/common/install.sh"
                     install_sing_box
                 else
-                    print_error "找不到安装模块"
+                    print_error "找不到安装模块: ${SCRIPT_DIR}/common/install.sh"
+                    read -p "按回车键继续..."
                 fi
                 ;;
             2)
@@ -297,7 +367,8 @@ main() {
                     source "${SCRIPT_DIR}/common/view.sh"
                     view_nodes
                 else
-                    print_error "找不到查看模块"
+                    print_error "找不到查看模块: ${SCRIPT_DIR}/common/view.sh"
+                    read -p "按回车键继续..."
                 fi
                 ;;
             4)
@@ -306,7 +377,8 @@ main() {
                     source "${SCRIPT_DIR}/common/relay.sh"
                     configure_relay
                 else
-                    print_error "找不到中转模块"
+                    print_error "找不到中转模块: ${SCRIPT_DIR}/common/relay.sh"
+                    read -p "按回车键继续..."
                 fi
                 ;;
             5)
@@ -315,7 +387,8 @@ main() {
                     source "${SCRIPT_DIR}/common/argo.sh"
                     configure_argo
                 else
-                    print_error "找不到Argo模块"
+                    print_error "找不到Argo模块: ${SCRIPT_DIR}/common/argo.sh"
+                    read -p "按回车键继续..."
                 fi
                 ;;
             6)
@@ -324,7 +397,8 @@ main() {
                     source "${SCRIPT_DIR}/common/service.sh"
                     manage_service
                 else
-                    print_error "找不到服务管理模块"
+                    print_error "找不到服务管理模块: ${SCRIPT_DIR}/common/service.sh"
+                    read -p "按回车键继续..."
                 fi
                 ;;
             7)
@@ -333,7 +407,8 @@ main() {
                     source "${SCRIPT_DIR}/common/uninstall.sh"
                     uninstall_all
                 else
-                    print_error "找不到卸载模块"
+                    print_error "找不到卸载模块: ${SCRIPT_DIR}/common/uninstall.sh"
+                    read -p "按回车键继续..."
                 fi
                 ;;
             0)
