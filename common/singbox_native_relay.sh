@@ -237,7 +237,84 @@ NEKO
     echo "  重启服务: systemctl restart singbox-native-relay"
     echo ""
     
-    read -p "按回车键继续..."
+    # 询问是否为节点配置中转
+    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo ""
+    read -p "是否为现有节点配置中转? [y/N]: " config_nodes
+    
+    if [[ "$config_nodes" =~ ^[Yy]$ ]]; then
+        # 首先添加 relay outbound 到 Sing-box 配置
+        add_relay_outbound_to_singbox "$port" "$username" "$password"
+        
+        # 然后配置节点
+        configure_node_relay
+    else
+        echo ""
+        print_info "稍后可以在菜单中配置节点中转"
+        echo ""
+        read -p "按回车键继续..."
+    fi
+}
+
+# 添加 relay outbound 到 Sing-box 配置
+add_relay_outbound_to_singbox() {
+    local port=$1
+    local username=$2
+    local password=$3
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    
+    if [[ ! -f "$config_file" ]]; then
+        print_warning "Sing-box 配置文件不存在，跳过"
+        return 1
+    fi
+    
+    print_info "添加 relay outbound 到 Sing-box 配置..."
+    
+    # 创建 relay outbound JSON
+    local relay_outbound
+    if [[ -n "$username" && -n "$password" ]]; then
+        relay_outbound=$(cat <<EOF
+{
+  "type": "socks",
+  "tag": "relay",
+  "server": "127.0.0.1",
+  "server_port": ${port},
+  "version": "5",
+  "username": "${username}",
+  "password": "${password}"
+}
+EOF
+)
+    else
+        relay_outbound=$(cat <<EOF
+{
+  "type": "socks",
+  "tag": "relay",
+  "server": "127.0.0.1",
+  "server_port": ${port},
+  "version": "5"
+}
+EOF
+)
+    fi
+    
+    # 检查是否已存在 relay outbound
+    local has_relay=$(jq '.outbounds[] | select(.tag == "relay")' "$config_file" 2>/dev/null)
+    
+    local temp_file=$(mktemp)
+    
+    if [[ -n "$has_relay" ]]; then
+        # 更新现有的 relay outbound
+        jq ".outbounds |= map(if .tag == \"relay\" then $relay_outbound else . end)" "$config_file" > "$temp_file"
+    else
+        # 添加新的 relay outbound
+        jq ".outbounds += [$relay_outbound]" "$config_file" > "$temp_file"
+    fi
+    
+    mv "$temp_file" "$config_file"
+    
+    print_success "relay outbound 已添加到 Sing-box 配置"
 }
 
 # 配置 HTTP 代理
@@ -383,7 +460,80 @@ NEKO
     echo "}"
     echo ""
     
-    read -p "按回车键继续..."
+    # 询问是否为节点配置中转
+    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo ""
+    read -p "是否为现有节点配置中转? [y/N]: " config_nodes
+    
+    if [[ "$config_nodes" =~ ^[Yy]$ ]]; then
+        # 添加 relay outbound 到 Sing-box 配置
+        add_http_relay_outbound_to_singbox "$port" "$username" "$password"
+        
+        # 配置节点
+        configure_node_relay
+    else
+        echo ""
+        print_info "稍后可以在菜单中配置节点中转"
+        echo ""
+        read -p "按回车键继续..."
+    fi
+}
+
+# 添加 HTTP relay outbound 到 Sing-box 配置
+add_http_relay_outbound_to_singbox() {
+    local port=$1
+    local username=$2
+    local password=$3
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    
+    if [[ ! -f "$config_file" ]]; then
+        print_warning "Sing-box 配置文件不存在，跳过"
+        return 1
+    fi
+    
+    print_info "添加 relay outbound 到 Sing-box 配置..."
+    
+    # 创建 relay outbound JSON
+    local relay_outbound
+    if [[ -n "$username" && -n "$password" ]]; then
+        relay_outbound=$(cat <<EOF
+{
+  "type": "http",
+  "tag": "relay",
+  "server": "127.0.0.1",
+  "server_port": ${port},
+  "username": "${username}",
+  "password": "${password}"
+}
+EOF
+)
+    else
+        relay_outbound=$(cat <<EOF
+{
+  "type": "http",
+  "tag": "relay",
+  "server": "127.0.0.1",
+  "server_port": ${port}
+}
+EOF
+)
+    fi
+    
+    # 检查是否已存在 relay outbound
+    local has_relay=$(jq '.outbounds[] | select(.tag == "relay")' "$config_file" 2>/dev/null)
+    
+    local temp_file=$(mktemp)
+    
+    if [[ -n "$has_relay" ]]; then
+        jq ".outbounds |= map(if .tag == \"relay\" then $relay_outbound else . end)" "$config_file" > "$temp_file"
+    else
+        jq ".outbounds += [$relay_outbound]" "$config_file" > "$temp_file"
+    fi
+    
+    mv "$temp_file" "$config_file"
+    
+    print_success "relay outbound 已添加到 Sing-box 配置"
 }
 
 # 配置 Shadowsocks 代理
@@ -496,7 +646,67 @@ EOF
     echo "  ${ss_link}"
     echo ""
     
-    read -p "按回车键继续..."
+    # 询问是否为节点配置中转
+    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo ""
+    read -p "是否为现有节点配置中转? [y/N]: " config_nodes
+    
+    if [[ "$config_nodes" =~ ^[Yy]$ ]]; then
+        # 添加 relay outbound 到 Sing-box 配置
+        add_ss_relay_outbound_to_singbox "$port" "$method" "$password"
+        
+        # 配置节点
+        configure_node_relay
+    else
+        echo ""
+        print_info "稍后可以在菜单中配置节点中转"
+        echo ""
+        read -p "按回车键继续..."
+    fi
+}
+
+# 添加 Shadowsocks relay outbound 到 Sing-box 配置
+add_ss_relay_outbound_to_singbox() {
+    local port=$1
+    local method=$2
+    local password=$3
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    
+    if [[ ! -f "$config_file" ]]; then
+        print_warning "Sing-box 配置文件不存在，跳过"
+        return 1
+    fi
+    
+    print_info "添加 relay outbound 到 Sing-box 配置..."
+    
+    # 创建 relay outbound JSON
+    local relay_outbound=$(cat <<EOF
+{
+  "type": "shadowsocks",
+  "tag": "relay",
+  "server": "127.0.0.1",
+  "server_port": ${port},
+  "method": "${method}",
+  "password": "${password}"
+}
+EOF
+)
+    
+    # 检查是否已存在 relay outbound
+    local has_relay=$(jq '.outbounds[] | select(.tag == "relay")' "$config_file" 2>/dev/null)
+    
+    local temp_file=$(mktemp)
+    
+    if [[ -n "$has_relay" ]]; then
+        jq ".outbounds |= map(if .tag == \"relay\" then $relay_outbound else . end)" "$config_file" > "$temp_file"
+    else
+        jq ".outbounds += [$relay_outbound]" "$config_file" > "$temp_file"
+    fi
+    
+    mv "$temp_file" "$config_file"
+    
+    print_success "relay outbound 已添加到 Sing-box 配置"
 }
 
 # 查看原生代理链配置
@@ -543,6 +753,145 @@ view_native_relay() {
     read -p "按回车键继续..."
 }
 
+# 为节点配置中转
+configure_node_relay() {
+    local config_file="${CONFIG_DIR}/config.json"
+    
+    if [[ ! -f "$config_file" ]]; then
+        print_error "Sing-box 配置文件不存在"
+        return 1
+    fi
+    
+    # 检查是否有节点
+    local outbound_count=$(jq '.outbounds | length' "$config_file" 2>/dev/null || echo "0")
+    if [[ "$outbound_count" -eq 0 ]]; then
+        print_warning "当前没有配置任何节点"
+        return 1
+    fi
+    
+    clear
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                  为节点配置中转                           ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    # 列出所有节点
+    echo -e "${GREEN}当前节点列表:${NC}"
+    echo ""
+    
+    local index=1
+    declare -a node_tags
+    declare -a node_types
+    declare -a node_servers
+    
+    while IFS='|' read -r tag type server detour; do
+        node_tags[$index]="$tag"
+        node_types[$index]="$type"
+        node_servers[$index]="$server"
+        
+        local status="直连"
+        if [[ "$detour" == "relay" ]]; then
+            status="${YELLOW}使用中转${NC}"
+        fi
+        
+        echo -e "  ${CYAN}[$index]${NC} ${type} - ${tag}"
+        echo -e "      服务器: ${server}"
+        echo -e "      状态: ${status}"
+        echo ""
+        
+        ((index++))
+    done < <(jq -r '.outbounds[] | "\(.tag)|\(.type)|\(.server // "N/A")|\(.detour // "none")"' "$config_file")
+    
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${GREEN}选项:${NC}"
+    echo -e "  ${GREEN}A.${NC}  为所有节点启用中转"
+    echo -e "  ${GREEN}B.${NC}  为所有节点禁用中转"
+    echo -e "  ${GREEN}1-$((index-1)).${NC}  为单个节点配置"
+    echo -e "  ${GREEN}0.${NC}  返回"
+    echo ""
+    
+    read -p "请选择 [0-$((index-1))/A/B]: " choice
+    
+    case $choice in
+        [Aa])
+            # 为所有节点启用中转
+            print_info "为所有节点启用中转..."
+            local temp_file=$(mktemp)
+            jq '.outbounds |= map(if .tag != "relay" then . + {"detour": "relay"} else . end)' "$config_file" > "$temp_file"
+            mv "$temp_file" "$config_file"
+            
+            # 重启服务
+            systemctl restart sing-box
+            print_success "已为所有节点启用中转"
+            ;;
+        [Bb])
+            # 为所有节点禁用中转
+            print_info "为所有节点禁用中转..."
+            local temp_file=$(mktemp)
+            jq '.outbounds |= map(del(.detour))' "$config_file" > "$temp_file"
+            mv "$temp_file" "$config_file"
+            
+            # 重启服务
+            systemctl restart sing-box
+            print_success "已为所有节点禁用中转"
+            ;;
+        0)
+            return
+            ;;
+        [1-9]|[1-9][0-9])
+            if [[ "$choice" -ge 1 && "$choice" -lt "$index" ]]; then
+                local selected_tag="${node_tags[$choice]}"
+                
+                echo ""
+                echo -e "${YELLOW}节点: ${selected_tag}${NC}"
+                echo ""
+                echo -e "${GREEN}1.${NC}  启用中转"
+                echo -e "${GREEN}2.${NC}  禁用中转"
+                echo -e "${GREEN}0.${NC}  取消"
+                echo ""
+                
+                read -p "请选择 [0-2]: " action
+                
+                case $action in
+                    1)
+                        # 启用中转
+                        local temp_file=$(mktemp)
+                        jq ".outbounds |= map(if .tag == \"$selected_tag\" then . + {\"detour\": \"relay\"} else . end)" "$config_file" > "$temp_file"
+                        mv "$temp_file" "$config_file"
+                        
+                        systemctl restart sing-box
+                        print_success "已为节点 ${selected_tag} 启用中转"
+                        ;;
+                    2)
+                        # 禁用中转
+                        local temp_file=$(mktemp)
+                        jq ".outbounds |= map(if .tag == \"$selected_tag\" then del(.detour) else . end)" "$config_file" > "$temp_file"
+                        mv "$temp_file" "$config_file"
+                        
+                        systemctl restart sing-box
+                        print_success "已为节点 ${selected_tag} 禁用中转"
+                        ;;
+                    0)
+                        return
+                        ;;
+                    *)
+                        print_error "无效的选择"
+                        ;;
+                esac
+            else
+                print_error "无效的节点序号"
+            fi
+            ;;
+        *)
+            print_error "无效的选择"
+            ;;
+    esac
+    
+    echo ""
+    read -p "按回车键继续..."
+}
+
 # 删除原生代理链
 remove_native_relay() {
     if ! check_native_relay; then
@@ -552,13 +901,32 @@ remove_native_relay() {
     
     print_info "正在删除原生代理链配置..."
     
-    # 停止并删除服务
+    # 1. 从 Sing-box 配置中移除所有 detour
+    local config_file="${CONFIG_DIR}/config.json"
+    if [[ -f "$config_file" ]]; then
+        print_info "恢复 Sing-box 节点配置..."
+        local temp_file=$(mktemp)
+        
+        # 移除所有 detour 字段
+        jq '.outbounds |= map(del(.detour))' "$config_file" > "$temp_file"
+        
+        # 移除 relay outbound
+        jq 'del(.outbounds[] | select(.tag == "relay"))' "$temp_file" > "${temp_file}.2"
+        mv "${temp_file}.2" "$config_file"
+        rm -f "$temp_file"
+        
+        # 重启 sing-box
+        systemctl restart sing-box 2>/dev/null
+        print_success "Sing-box 配置已恢复"
+    fi
+    
+    # 2. 停止并删除代理服务
     systemctl stop singbox-native-relay 2>/dev/null
     systemctl disable singbox-native-relay 2>/dev/null
     rm -f /etc/systemd/system/singbox-native-relay.service
     systemctl daemon-reload
     
-    # 删除配置文件
+    # 3. 删除配置文件
     rm -f "$NATIVE_RELAY_CONFIG"
     
     print_success "原生代理链配置已删除"
