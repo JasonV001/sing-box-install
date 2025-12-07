@@ -477,6 +477,11 @@ apply_certificate_auto() {
         sleep 2
     fi
     
+    # 清除可能存在的旧配置
+    print_info "清除旧配置..."
+    $ACME_SH --remove -d "$domain" 2>/dev/null
+    rm -rf ~/.acme.sh/${domain}_ecc 2>/dev/null
+    
     # 尝试从多个 CA 申请证书
     local success=false
     for ca_server in "${ca_servers[@]}"; do
@@ -484,8 +489,8 @@ apply_certificate_auto() {
         
         $ACME_SH --set-default-ca --server "$ca_server"
         
-        # 使用 standalone 模式，HTTP-01 验证
-        if $ACME_SH --issue -d "$domain" --standalone --httpport 80 -k ec-256 --force 2>&1 | tee /tmp/acme_output.log; then
+        # 使用 standalone 模式，HTTP-01 验证，明确指定不使用 DNS
+        if $ACME_SH --issue -d "$domain" --standalone --httpport 80 -k ec-256 --force --debug 2>&1 | tee /tmp/acme_output.log; then
             print_success "证书申请成功"
             
             # 安装证书
@@ -504,13 +509,25 @@ apply_certificate_auto() {
             print_warning "从 ${ca_server} 申请失败"
             
             # 显示错误信息
+            echo ""
             if grep -q "Verify error" /tmp/acme_output.log; then
-                echo ""
                 print_error "域名验证失败"
                 echo "  可能原因："
                 echo "  1. 域名未正确解析到本服务器"
                 echo "  2. 防火墙阻止了 80 端口"
                 echo "  3. 80 端口被其他服务占用"
+            elif grep -q "invalid domain" /tmp/acme_output.log; then
+                print_error "域名无效或配置错误"
+                echo "  请检查："
+                echo "  1. 域名格式是否正确"
+                echo "  2. 域名是否已正确解析"
+                echo "  3. 是否有旧的 DNS 配置残留"
+            elif grep -q "TXT" /tmp/acme_output.log; then
+                print_error "检测到 DNS 验证模式"
+                echo "  正在清除 DNS 配置..."
+                # 清除 DNS 配置
+                rm -rf ~/.acme.sh/${domain}_ecc 2>/dev/null
+                $ACME_SH --remove -d "$domain" 2>/dev/null
             fi
             
             echo ""
