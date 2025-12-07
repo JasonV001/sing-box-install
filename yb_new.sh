@@ -182,18 +182,30 @@ get_server_ip() {
 # ==================== 主菜单 ====================
 show_main_menu() {
     show_banner
-    echo -e "${CYAN}═══════════════════ 主菜单 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                        主菜单                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC}  安装 Sing-box"
-    echo -e "  ${GREEN}2.${NC}  配置节点"
-    echo -e "  ${GREEN}3.${NC}  查看节点信息"
-    echo -e "  ${GREEN}4.${NC}  配置中转"
-    echo -e "  ${GREEN}5.${NC}  配置 Argo 隧道"
-    echo -e "  ${GREEN}6.${NC}  管理服务"
-    echo -e "  ${GREEN}7.${NC}  卸载"
-    echo -e "  ${GREEN}0.${NC}  退出"
+    echo -e "  ${PURPLE}【系统管理】${NC}"
+    echo -e "    ${GREEN}1.${NC}  安装 Sing-box"
+    echo -e "    ${GREEN}2.${NC}  更新证书"
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo -e "  ${PURPLE}【节点管理】${NC}"
+    echo -e "    ${GREEN}3.${NC}  配置节点"
+    echo -e "    ${GREEN}4.${NC}  查看节点信息"
+    echo -e "    ${GREEN}5.${NC}  节点管理"
+    echo ""
+    echo -e "  ${PURPLE}【高级功能】${NC}"
+    echo -e "    ${GREEN}6.${NC}  配置中转"
+    echo -e "    ${GREEN}7.${NC}  配置 Argo 隧道"
+    echo ""
+    echo -e "  ${PURPLE}【服务管理】${NC}"
+    echo -e "    ${GREEN}8.${NC}  管理服务"
+    echo -e "    ${GREEN}9.${NC}  卸载"
+    echo ""
+    echo -e "    ${GREEN}0.${NC}  退出"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
 }
 
 # ==================== 协议选择菜单 ====================
@@ -319,6 +331,242 @@ check_dependencies() {
     fi
 }
 
+# ==================== 更新证书 ====================
+update_certificate() {
+    clear
+    echo -e "${CYAN}═══════════════════ 更新证书 ═══════════════════${NC}"
+    echo ""
+    
+    # 调用 yb.sh 的证书申请功能
+    if [[ -f "${SCRIPT_DIR}/yb.sh" ]]; then
+        print_info "调用 yb.sh 证书申请功能..."
+        echo ""
+        
+        # 加载 yb.sh 的函数
+        source "${SCRIPT_DIR}/yb.sh"
+        
+        # 显示证书申请选项
+        echo "请选择证书申请方式："
+        echo "  1. 自动申请证书（需要域名）"
+        echo "  2. 使用 CloudFlare API 申请"
+        echo "  3. 手动指定证书路径"
+        echo "  0. 返回"
+        echo ""
+        read -p "请选择 [0-3]: " cert_choice
+        
+        case $cert_choice in
+            1)
+                read -p "请输入域名: " domain
+                if [[ -n "$domain" ]]; then
+                    apply_certificate
+                else
+                    print_error "域名不能为空"
+                fi
+                ;;
+            2)
+                read -p "请输入域名: " domain
+                read -p "请输入 CloudFlare Zone ID: " zone_id
+                read -p "请输入 CloudFlare API Token: " CF_Token
+                export CF_Token
+                if [[ -n "$domain" && -n "$zone_id" && -n "$CF_Token" ]]; then
+                    Apply_api_certificate
+                else
+                    print_error "参数不完整"
+                fi
+                ;;
+            3)
+                set_certificate_path
+                set_private_key_path
+                print_success "证书路径已设置"
+                ;;
+            0)
+                return
+                ;;
+            *)
+                print_error "无效的选择"
+                ;;
+        esac
+    else
+        print_error "找不到 yb.sh 文件"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..."
+}
+
+# ==================== 节点管理 ====================
+manage_nodes() {
+    clear
+    echo -e "${CYAN}═══════════════════ 节点管理 ═══════════════════${NC}"
+    echo ""
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    
+    if [[ ! -f "$config_file" ]]; then
+        print_warning "配置文件不存在"
+        echo ""
+        read -p "按回车键继续..."
+        return
+    fi
+    
+    local inbound_count=$(jq '.inbounds | length' "$config_file" 2>/dev/null || echo "0")
+    
+    if [[ "$inbound_count" -eq 0 ]]; then
+        print_warning "暂无配置的节点"
+        echo ""
+        read -p "按回车键继续..."
+        return
+    fi
+    
+    # 显示所有节点
+    echo -e "${GREEN}当前节点列表:${NC}"
+    echo ""
+    
+    local index=1
+    while IFS='|' read -r type tag port; do
+        echo -e "  ${CYAN}[$index]${NC} ${type} - ${tag} (端口: ${port})"
+        ((index++))
+    done < <(jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file")
+    
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  ${GREEN}1.${NC}  删除单个节点"
+    echo -e "  ${GREEN}2.${NC}  删除全部节点"
+    echo -e "  ${GREEN}0.${NC}  返回"
+    echo ""
+    
+    read -p "请选择操作 [0-2]: " manage_choice
+    
+    case $manage_choice in
+        1)
+            delete_single_node
+            ;;
+        2)
+            delete_all_nodes
+            ;;
+        0)
+            return
+            ;;
+        *)
+            print_error "无效的选择"
+            sleep 2
+            manage_nodes
+            ;;
+    esac
+}
+
+# 删除单个节点
+delete_single_node() {
+    clear
+    echo -e "${CYAN}═══════════════════ 删除节点 ═══════════════════${NC}"
+    echo ""
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    local inbound_count=$(jq '.inbounds | length' "$config_file" 2>/dev/null || echo "0")
+    
+    if [[ "$inbound_count" -eq 0 ]]; then
+        print_warning "暂无配置的节点"
+        echo ""
+        read -p "按回车键继续..."
+        return
+    fi
+    
+    # 显示节点列表
+    echo -e "${GREEN}请选择要删除的节点:${NC}"
+    echo ""
+    
+    declare -a node_tags
+    local index=1
+    
+    while IFS='|' read -r type tag port; do
+        echo -e "  ${CYAN}[$index]${NC} ${type} - ${tag} (端口: ${port})"
+        node_tags[$index]="$tag"
+        ((index++))
+    done < <(jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file")
+    
+    echo ""
+    echo -e "  ${GREEN}0.${NC}  返回"
+    echo ""
+    
+    read -p "请选择节点序号 [0-$((index-1))]: " node_index
+    
+    if [[ "$node_index" == "0" ]]; then
+        manage_nodes
+        return
+    fi
+    
+    if [[ "$node_index" -ge 1 && "$node_index" -lt "$index" ]]; then
+        local selected_tag="${node_tags[$node_index]}"
+        
+        print_warning "确认删除节点: ${selected_tag}?"
+        read -p "输入 yes 确认: " confirm
+        
+        if [[ "$confirm" == "yes" ]]; then
+            # 删除节点配置
+            local temp_file=$(mktemp)
+            jq "del(.inbounds[] | select(.tag == \"$selected_tag\"))" "$config_file" > "$temp_file"
+            mv "$temp_file" "$config_file"
+            
+            # 删除对应的链接文件
+            local port=$(jq -r ".inbounds[] | select(.tag == \"$selected_tag\") | .listen_port" "$config_file" 2>/dev/null)
+            if [[ -n "$port" ]]; then
+                rm -f "${LINK_DIR}"/*_${port}.txt 2>/dev/null
+            fi
+            
+            # 重启服务
+            systemctl restart sing-box
+            
+            print_success "节点已删除"
+        else
+            print_info "取消删除"
+        fi
+    else
+        print_error "无效的选择"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..."
+    manage_nodes
+}
+
+# 删除全部节点
+delete_all_nodes() {
+    clear
+    echo -e "${CYAN}═══════════════════ 删除全部节点 ═══════════════════${NC}"
+    echo ""
+    
+    print_warning "此操作将删除所有节点配置！"
+    echo ""
+    read -p "确认删除全部节点? 输入 yes 确认: " confirm
+    
+    if [[ "$confirm" == "yes" ]]; then
+        local config_file="${CONFIG_DIR}/config.json"
+        
+        # 备份配置
+        cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
+        
+        # 清空 inbounds
+        local temp_file=$(mktemp)
+        jq '.inbounds = []' "$config_file" > "$temp_file"
+        mv "$temp_file" "$config_file"
+        
+        # 删除所有链接文件
+        rm -f "${LINK_DIR}"/*.txt 2>/dev/null
+        
+        # 重启服务
+        systemctl restart sing-box
+        
+        print_success "所有节点已删除"
+        print_info "配置已备份到: ${config_file}.backup.*"
+    else
+        print_info "取消删除"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..."
+}
+
 # ==================== 初始化 ====================
 initialize() {
     # 检查root权限
@@ -351,7 +599,7 @@ main() {
     # 主循环
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-7]: " choice
+        read -p "请选择操作 [0-9]: " choice
         
         case $choice in
             1)
@@ -365,10 +613,14 @@ main() {
                 fi
                 ;;
             2)
+                # 更新证书
+                update_certificate
+                ;;
+            3)
                 # 配置节点
                 show_protocol_menu
                 ;;
-            3)
+            4)
                 # 查看节点信息
                 if [[ -f "${SCRIPT_DIR}/common/view.sh" ]]; then
                     source "${SCRIPT_DIR}/common/view.sh"
@@ -378,7 +630,11 @@ main() {
                     read -p "按回车键继续..."
                 fi
                 ;;
-            4)
+            5)
+                # 节点管理
+                manage_nodes
+                ;;
+            6)
                 # 配置中转
                 if [[ -f "${SCRIPT_DIR}/common/relay.sh" ]]; then
                     source "${SCRIPT_DIR}/common/relay.sh"
@@ -388,7 +644,7 @@ main() {
                     read -p "按回车键继续..."
                 fi
                 ;;
-            5)
+            7)
                 # 配置Argo隧道
                 if [[ -f "${SCRIPT_DIR}/common/argo.sh" ]]; then
                     source "${SCRIPT_DIR}/common/argo.sh"
@@ -398,7 +654,7 @@ main() {
                     read -p "按回车键继续..."
                 fi
                 ;;
-            6)
+            8)
                 # 管理服务
                 if [[ -f "${SCRIPT_DIR}/common/service.sh" ]]; then
                     source "${SCRIPT_DIR}/common/service.sh"
@@ -408,7 +664,7 @@ main() {
                     read -p "按回车键继续..."
                 fi
                 ;;
-            7)
+            9)
                 # 卸载
                 if [[ -f "${SCRIPT_DIR}/common/uninstall.sh" ]]; then
                     source "${SCRIPT_DIR}/common/uninstall.sh"

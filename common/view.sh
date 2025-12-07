@@ -334,11 +334,37 @@ view_all_node_links() {
         return
     fi
     
-    # 显示所有链接
+    # 提取并显示所有纯链接
+    local link_count=0
+    
     for file in ${LINK_DIR}/*.txt; do
-        [[ -f "$file" ]] && cat "$file" && echo ""
+        if [[ -f "$file" ]]; then
+            # 提取协议链接（vless://, vmess://, trojan://, ss://, hysteria2://, socks5://, tuic://, juicity://）
+            local links=$(grep -E '^(vless|vmess|trojan|ss|hysteria2|socks5|tuic|juicity|http)://' "$file" 2>/dev/null)
+            
+            if [[ -n "$links" ]]; then
+                # 获取文件名作为标识
+                local filename=$(basename "$file" .txt)
+                
+                # 显示链接
+                while IFS= read -r link; do
+                    ((link_count++))
+                    echo -e "${GREEN}[$link_count]${NC} $link"
+                done <<< "$links"
+                
+                echo ""
+            fi
+        fi
     done
     
+    if [[ $link_count -eq 0 ]]; then
+        print_warning "未找到有效的节点链接"
+    else
+        print_success "共找到 ${link_count} 个节点链接"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
     echo ""
     read -p "按回车键返回..."
     view_nodes
