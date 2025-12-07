@@ -30,6 +30,11 @@ CERT_DIR="/etc/ssl/private"
 LINK_DIR="${CONFIG_DIR}/links"
 RELAY_DIR="${CONFIG_DIR}/relays"
 
+# 加载验证函数库
+if [[ -f "${SCRIPT_DIR}/common/validation.sh" ]]; then
+    source "${SCRIPT_DIR}/common/validation.sh"
+fi
+
 # ==================== 全局变量 ====================
 SERVER_IP=""
 SERVER_IPV6=""
@@ -442,8 +447,8 @@ apply_certificate_auto() {
     
     read -p "请输入域名: " domain
     
-    if [[ -z "$domain" ]]; then
-        print_error "域名不能为空"
+    # 验证域名格式（防止命令注入）
+    if ! validate_domain "$domain"; then
         return 1
     fi
     
@@ -498,6 +503,10 @@ apply_certificate_auto() {
     $ACME_SH --remove -d "$domain" 2>/dev/null
     rm -rf ~/.acme.sh/${domain}_ecc 2>/dev/null
     
+    # 创建安全的临时日志文件
+    local log_file=$(create_secure_temp)
+    trap "rm -f '$log_file'" RETURN
+    
     # 尝试从多个 CA 申请证书
     local success=false
     for ca_server in "${ca_servers[@]}"; do
@@ -506,7 +515,7 @@ apply_certificate_auto() {
         $ACME_SH --set-default-ca --server "$ca_server"
         
         # 使用 standalone 模式，HTTP-01 验证，明确指定不使用 DNS
-        if $ACME_SH --issue -d "$domain" --standalone --httpport 80 -k ec-256 --force --debug 2>&1 | tee /tmp/acme_output.log; then
+        if $ACME_SH --issue -d "$domain" --standalone --httpport 80 -k ec-256 --force --debug 2>&1 | tee "$log_file"; then
             print_success "证书申请成功"
             
             # 安装证书
@@ -526,19 +535,19 @@ apply_certificate_auto() {
             
             # 显示错误信息
             echo ""
-            if grep -q "Verify error" /tmp/acme_output.log; then
+            if grep -q "Verify error" "$log_file"; then
                 print_error "域名验证失败"
                 echo "  可能原因："
                 echo "  1. 域名未正确解析到本服务器"
                 echo "  2. 防火墙阻止了 80 端口"
                 echo "  3. 80 端口被其他服务占用"
-            elif grep -q "invalid domain" /tmp/acme_output.log; then
+            elif grep -q "invalid domain" "$log_file"; then
                 print_error "域名无效或配置错误"
                 echo "  请检查："
                 echo "  1. 域名格式是否正确"
                 echo "  2. 域名是否已正确解析"
                 echo "  3. 是否有旧的 DNS 配置残留"
-            elif grep -q "TXT" /tmp/acme_output.log; then
+            elif grep -q "TXT" "$log_file"; then
                 print_error "检测到 DNS 验证模式"
                 echo "  正在清除 DNS 配置..."
                 # 清除 DNS 配置
@@ -554,12 +563,12 @@ apply_certificate_auto() {
         fi
     done
     
-    rm -f /tmp/acme_output.log
-    
     # 恢复服务
     if [[ "$need_restart" == "true" ]]; then
         print_info "重启 sing-box 服务..."
-        systemctl start sing-box
+        if ! systemctl start sing-box; then
+            print_warning "服务启动失败，请手动检查"
+        fi
     fi
     
     if [[ "$success" == "false" ]]; then
@@ -584,17 +593,26 @@ apply_certificate_cf() {
     echo ""
     
     read -p "请输入域名: " domain
-    read -p "请输入 CloudFlare API Token: " CF_Token
     
-    if [[ -z "$domain" || -z "$CF_Token" ]]; then
-        print_error "域名和 API Token 不能为空"
+    # 验证域名格式（防止命令注入）
+    if ! validate_domain "$domain"; then
         return 1
     fi
     
-    # 设置 CloudFlare API Token
+    # 使用 -s 隐藏敏感输入
+    read -s -p "请输入 CloudFlare API Token: " CF_Token
+    echo ""  # 换行
+    
+    if [[ -z "$CF_Token" ]]; then
+        print_error "API Token 不能为空"
+        return 1
+    fi
+    
+    # 设置 CloudFlare API Token（使用 trap 确保清理）
     export CF_Token
     export CF_Account_ID=""
     export CF_Zone_ID=""
+    trap 'unset CF_Token CF_Account_ID CF_Zone_ID' RETURN
     
     local certificate_path="/etc/ssl/private/${domain}.crt"
     local private_key_path="/etc/ssl/private/${domain}.key"
@@ -604,7 +622,10 @@ apply_certificate_cf() {
     echo ""
     
     # 安装证书工具
-    install_acme_tools || return 1
+    if ! install_acme_tools; then
+        unset CF_Token CF_Account_ID CF_Zone_ID
+        return 1
+    fi
     
     # 设置 acme.sh 路径
     local ACME_SH=~/.acme.sh/acme.sh
@@ -614,6 +635,10 @@ apply_certificate_cf() {
     $ACME_SH --remove -d "$domain" 2>/dev/null
     rm -rf ~/.acme.sh/${domain}_ecc 2>/dev/null
     
+    # 创建安全的临时日志文件
+    local log_file=$(create_secure_temp)
+    trap 'rm -f "$log_file"; unset CF_Token CF_Account_ID CF_Zone_ID' RETURN
+    
     # 尝试从多个 CA 申请证书
     local success=false
     for ca_server in "${ca_servers[@]}"; do
@@ -622,7 +647,7 @@ apply_certificate_cf() {
         $ACME_SH --set-default-ca --server "$ca_server"
         
         # 使用 CloudFlare DNS API
-        if $ACME_SH --issue --dns dns_cf -d "$domain" -k ec-256 --debug 2>&1 | tee /tmp/acme_cf_output.log; then
+        if $ACME_SH --issue --dns dns_cf -d "$domain" -k ec-256 --debug 2>&1 | tee "$log_file"; then
             print_success "证书申请成功"
             
             # 安装证书
@@ -642,16 +667,16 @@ apply_certificate_cf() {
             
             # 分析错误
             echo ""
-            if grep -q "invalid domain" /tmp/acme_cf_output.log; then
+            if grep -q "invalid domain" "$log_file"; then
                 print_error "域名无效"
                 echo "  请检查域名格式是否正确"
-            elif grep -q "Error adding TXT record" /tmp/acme_cf_output.log; then
+            elif grep -q "Error adding TXT record" "$log_file"; then
                 print_error "无法添加 DNS 记录"
                 echo "  可能原因："
                 echo "  1. API Token 权限不足"
                 echo "  2. API Token 已过期"
                 echo "  3. 域名不在 CloudFlare 管理"
-            elif grep -q "CF_Token" /tmp/acme_cf_output.log; then
+            elif grep -q "CF_Token" "$log_file"; then
                 print_error "API Token 配置错误"
                 echo "  请检查 Token 是否正确"
             fi
@@ -663,8 +688,6 @@ apply_certificate_cf() {
             fi
         fi
     done
-    
-    rm -f /tmp/acme_cf_output.log
     
     if [[ "$success" == "false" ]]; then
         print_error "证书申请失败"
@@ -691,15 +714,16 @@ set_certificate_manual() {
     echo ""
     
     read -p "请输入证书文件路径 (.crt 或 .pem): " cert_path
-    read -p "请输入私钥文件路径 (.key): " key_path
     
-    if [[ ! -f "$cert_path" ]]; then
-        print_error "证书文件不存在: ${cert_path}"
+    # 验证证书文件路径（防止路径遍历）
+    if ! validate_file_path "$cert_path" "crt" "pem"; then
         return 1
     fi
     
-    if [[ ! -f "$key_path" ]]; then
-        print_error "私钥文件不存在: ${key_path}"
+    read -p "请输入私钥文件路径 (.key): " key_path
+    
+    # 验证私钥文件路径（防止路径遍历）
+    if ! validate_file_path "$key_path" "key"; then
         return 1
     fi
     
@@ -734,18 +758,22 @@ renew_certificate() {
     print_info "续期所有证书..."
     echo ""
     
-    $ACME_SH --renew-all --force
-    
-    if [[ $? -eq 0 ]]; then
+    if $ACME_SH --renew-all --force; then
         print_success "证书续期成功"
         
         # 重启服务以加载新证书
         print_info "重启 sing-box 服务..."
-        systemctl restart sing-box
-        
-        print_success "服务已重启"
+        if systemctl restart sing-box; then
+            print_success "服务已重启"
+        else
+            print_error "服务重启失败"
+            print_info "请手动检查服务状态: systemctl status sing-box"
+            return 1
+        fi
     else
         print_error "证书续期失败"
+        print_info "请检查日志: ~/.acme.sh/acme.sh.log"
+        return 1
     fi
 }
 
@@ -1012,21 +1040,39 @@ delete_single_node() {
         read -p "输入 yes 确认: " confirm
         
         if [[ "$confirm" == "yes" ]]; then
+            # 先获取端口（在删除前）
+            local port=$(jq -r ".inbounds[] | select(.tag == \"$selected_tag\") | .listen_port" "$config_file" 2>/dev/null)
+            
             # 删除节点配置
-            local temp_file=$(mktemp)
-            jq "del(.inbounds[] | select(.tag == \"$selected_tag\"))" "$config_file" > "$temp_file"
+            local temp_file=$(create_secure_temp)
+            trap "rm -f '$temp_file'" RETURN
+            
+            if ! jq "del(.inbounds[] | select(.tag == \"$selected_tag\"))" "$config_file" > "$temp_file"; then
+                print_error "配置修改失败"
+                return 1
+            fi
+            
+            # 验证配置
+            if ! validate_config "$temp_file"; then
+                print_error "配置验证失败，已回滚"
+                return 1
+            fi
+            
             mv "$temp_file" "$config_file"
             
             # 删除对应的链接文件
-            local port=$(jq -r ".inbounds[] | select(.tag == \"$selected_tag\") | .listen_port" "$config_file" 2>/dev/null)
             if [[ -n "$port" ]]; then
                 rm -f "${LINK_DIR}"/*_${port}.txt 2>/dev/null
             fi
             
             # 重启服务
-            systemctl restart sing-box
-            
-            print_success "节点已删除"
+            if systemctl restart sing-box; then
+                print_success "节点已删除，服务已重启"
+            else
+                print_error "节点已删除，但服务重启失败"
+                print_info "请手动检查服务状态: systemctl status sing-box"
+                return 1
+            fi
         else
             print_info "取消删除"
         fi
@@ -1057,21 +1103,42 @@ delete_all_nodes() {
         local config_file="${CONFIG_DIR}/config.json"
         
         # 备份配置
-        cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
+        local backup_file="${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
+        if ! cp "$config_file" "$backup_file"; then
+            print_error "配置备份失败"
+            return 1
+        fi
         
         # 清空 inbounds
-        local temp_file=$(mktemp)
-        jq '.inbounds = []' "$config_file" > "$temp_file"
+        local temp_file=$(create_secure_temp)
+        trap "rm -f '$temp_file'" RETURN
+        
+        if ! jq '.inbounds = []' "$config_file" > "$temp_file"; then
+            print_error "配置修改失败"
+            return 1
+        fi
+        
+        # 验证配置
+        if ! validate_config "$temp_file"; then
+            print_error "配置验证失败，已回滚"
+            return 1
+        fi
+        
         mv "$temp_file" "$config_file"
         
         # 删除所有链接文件
         rm -f "${LINK_DIR}"/*.txt 2>/dev/null
         
         # 重启服务
-        systemctl restart sing-box
-        
-        print_success "所有节点已删除"
-        print_info "配置已备份到: ${config_file}.backup.*"
+        if systemctl restart sing-box; then
+            print_success "所有节点已删除，服务已重启"
+            print_info "配置已备份到: ${backup_file}"
+        else
+            print_error "节点已删除，但服务重启失败"
+            print_info "配置已备份到: ${backup_file}"
+            print_info "请手动检查服务状态: systemctl status sing-box"
+            return 1
+        fi
     else
         print_info "取消删除"
     fi
