@@ -40,9 +40,56 @@ add_relay_rule() {
     print_info "添加中转规则"
     echo ""
     
+    # 检测容器环境
+    local in_container=false
+    local virt_type=""
+    if command -v systemd-detect-virt &>/dev/null; then
+        virt_type=$(systemd-detect-virt 2>/dev/null)
+        if [[ "$virt_type" =~ (docker|podman|lxc|container) ]]; then
+            in_container=true
+        fi
+    fi
+    
+    # 如果在容器中，显示警告
+    if [[ "$in_container" == true ]]; then
+        echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║                    ⚠ 容器环境检测                         ║${NC}"
+        echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${YELLOW}检测到当前运行在容器环境中: ${virt_type}${NC}"
+        echo ""
+        echo -e "${RED}注意: iptables 和 DNAT 在容器中无法使用！${NC}"
+        echo ""
+        echo -e "${CYAN}原因:${NC}"
+        echo "  • 容器没有 CAP_NET_ADMIN 权限"
+        echo "  • 无法加载内核模块"
+        echo "  • 无法修改宿主机网络规则"
+        echo ""
+        echo -e "${GREEN}推荐使用:${NC}"
+        echo "  • Socat 转发 (选项 3) - 应用层转发，容器中可用"
+        echo "  • Gost 转发 (选项 4) - 功能强大，容器中可用"
+        echo ""
+        echo -e "${YELLOW}如果必须使用 iptables:${NC}"
+        echo "  1. 在宿主机上配置 iptables"
+        echo "  2. 或以特权模式运行容器: --privileged --cap-add=NET_ADMIN"
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
+        read -p "按回车键继续..."
+        clear
+        print_info "添加中转规则"
+        echo ""
+    fi
+    
     echo -e "${CYAN}═══════════════════ 中转类型详细说明 ═══════════════════${NC}"
     echo ""
-    echo -e "${GREEN}【1】iptables 端口转发${NC}"
+    
+    # 如果在容器中，标记 iptables 和 DNAT 不可用
+    if [[ "$in_container" == true ]]; then
+        echo -e "${GREEN}【1】iptables 端口转发${NC} ${RED}[容器中不可用]${NC}"
+    else
+        echo -e "${GREEN}【1】iptables 端口转发${NC}"
+    fi
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "  ${YELLOW}工作原理:${NC}"
     echo "    • 在 Linux 内核层面进行数据包转发"
@@ -75,7 +122,11 @@ add_relay_rule() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    echo -e "${GREEN}【2】DNAT 转发${NC}"
+    if [[ "$in_container" == true ]]; then
+        echo -e "${GREEN}【2】DNAT 转发${NC} ${RED}[容器中不可用]${NC}"
+    else
+        echo -e "${GREEN}【2】DNAT 转发${NC}"
+    fi
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "  ${YELLOW}工作原理:${NC}"
     echo "    • 目标网络地址转换 (Destination NAT)"
@@ -220,10 +271,15 @@ add_relay_rule() {
     
     echo -e "${PURPLE}═══════════════════ 选择建议 ═══════════════════${NC}"
     echo ""
-    echo -e "  ${GREEN}性能优先${NC} → 选择 iptables (内核级转发)"
-    echo -e "  ${GREEN}简单易用${NC} → 选择 socat (配置简单)"
-    echo -e "  ${GREEN}功能丰富${NC} → 选择 Gost (支持加密混淆)"
-    echo -e "  ${GREEN}负载均衡${NC} → 选择 DNAT (多目标分流)"
+    if [[ "$in_container" == true ]]; then
+        echo -e "  ${YELLOW}容器环境推荐${NC} → 选择 Gost (功能强大) 或 Socat (简单)"
+        echo -e "  ${RED}不推荐${NC} → iptables/DNAT (容器中无法使用)"
+    else
+        echo -e "  ${GREEN}性能优先${NC} → 选择 iptables (内核级转发)"
+        echo -e "  ${GREEN}简单易用${NC} → 选择 socat (配置简单)"
+        echo -e "  ${GREEN}功能丰富${NC} → 选择 Gost (支持加密混淆)"
+        echo -e "  ${GREEN}负载均衡${NC} → 选择 DNAT (多目标分流)"
+    fi
     echo ""
     echo -e "${PURPLE}═══════════════════════════════════════════════${NC}"
     echo ""
@@ -231,8 +287,28 @@ add_relay_rule() {
     read -p "请选择中转类型 [1-4]: " relay_type
     
     case $relay_type in
-        1) add_iptables_relay ;;
-        2) add_dnat_relay ;;
+        1) 
+            if [[ "$in_container" == true ]]; then
+                print_error "iptables 在容器环境中无法使用"
+                echo ""
+                echo -e "${YELLOW}请选择 Socat (3) 或 Gost (4)${NC}"
+                sleep 3
+                add_relay_rule
+                return
+            fi
+            add_iptables_relay
+            ;;
+        2) 
+            if [[ "$in_container" == true ]]; then
+                print_error "DNAT 在容器环境中无法使用"
+                echo ""
+                echo -e "${YELLOW}请选择 Socat (3) 或 Gost (4)${NC}"
+                sleep 3
+                add_relay_rule
+                return
+            fi
+            add_dnat_relay
+            ;;
         3) add_socat_relay ;;
         4) add_gost_relay ;;
         *) print_error "无效的选择"; sleep 2; return ;;
@@ -326,6 +402,52 @@ add_iptables_relay() {
         else
             print_error "iptables 安装失败"
             read -p "按回车键继续..."
+            return 1
+        fi
+    fi
+    
+    # 检查 iptables 是否可用（测试权限）
+    if ! iptables -L -n &>/dev/null; then
+        print_warning "检测到 iptables 权限问题"
+        echo ""
+        echo -e "${YELLOW}可能的原因:${NC}"
+        echo "  1. nf_tables 后端权限问题"
+        echo "  2. 容器环境限制"
+        echo "  3. SELinux/AppArmor 限制"
+        echo ""
+        
+        # 尝试切换到 legacy 模式
+        if command -v iptables-legacy &>/dev/null; then
+            print_info "尝试切换到 iptables-legacy 模式..."
+            if update-alternatives --set iptables /usr/sbin/iptables-legacy &>/dev/null; then
+                print_success "已切换到 iptables-legacy"
+                
+                # 再次测试
+                if iptables -L -n &>/dev/null; then
+                    print_success "iptables 现在可以正常使用"
+                else
+                    print_error "切换后仍然无法使用 iptables"
+                    echo ""
+                    echo -e "${YELLOW}请检查:${NC}"
+                    echo "  1. 是否在容器中运行（需要特权模式）"
+                    echo "  2. SELinux 状态: getenforce"
+                    echo "  3. 内核模块: lsmod | grep ip_tables"
+                    echo ""
+                    read -p "按回车键返回..."
+                    return 1
+                fi
+            else
+                print_warning "无法切换到 legacy 模式"
+            fi
+        else
+            print_error "iptables-legacy 不可用"
+            echo ""
+            echo -e "${YELLOW}请手动解决权限问题:${NC}"
+            echo "  1. 检查是否在容器中: systemd-detect-virt"
+            echo "  2. 检查 SELinux: getenforce"
+            echo "  3. 尝试: modprobe ip_tables"
+            echo ""
+            read -p "按回车键返回..."
             return 1
         fi
     fi
@@ -451,6 +573,31 @@ add_dnat_relay() {
         sleep 1
     fi
     
+    # 检查 iptables 是否可用（测试权限）
+    if ! iptables -L -n &>/dev/null; then
+        print_warning "检测到 iptables 权限问题"
+        echo ""
+        
+        # 尝试切换到 legacy 模式
+        if command -v iptables-legacy &>/dev/null; then
+            print_info "尝试切换到 iptables-legacy 模式..."
+            if update-alternatives --set iptables /usr/sbin/iptables-legacy &>/dev/null; then
+                print_success "已切换到 iptables-legacy"
+                
+                # 再次测试
+                if ! iptables -L -n &>/dev/null; then
+                    print_error "切换后仍然无法使用 iptables"
+                    read -p "按回车键返回..."
+                    return 1
+                fi
+            fi
+        else
+            print_error "无法解决 iptables 权限问题"
+            read -p "按回车键返回..."
+            return 1
+        fi
+    fi
+    
     echo ""
     
     # 启用IP转发
@@ -532,15 +679,41 @@ add_socat_relay() {
     fi
     echo ""
     
-    read -p "请输入本地监听端口: " local_port
-    read -p "请输入目标IP地址: " target_ip
-    read -p "请输入目标端口: " target_port
+    read -p "请输入本地监听端口 (如: 8080): " local_port
+    if [[ -z "$local_port" ]]; then
+        print_error "端口不能为空"
+        sleep 2
+        return 1
+    fi
+    
+    read -p "请输入目标IP地址 (如: 1.2.3.4): " target_ip
+    if [[ -z "$target_ip" ]]; then
+        print_error "目标IP不能为空"
+        sleep 2
+        return 1
+    fi
+    
+    read -p "请输入目标端口 (如: 80): " target_port
+    if [[ -z "$target_port" ]]; then
+        print_error "目标端口不能为空"
+        sleep 2
+        return 1
+    fi
+    
     echo ""
-    echo "请选择协议:"
-    echo "  tcp - TCP 协议 (适合大多数情况)"
-    echo "  udp - UDP 协议 (适合 DNS、游戏等)"
+    echo -e "${CYAN}请选择转发协议:${NC}"
+    echo "  ${GREEN}tcp${NC} - TCP 协议 (适合大多数情况，如 HTTP/HTTPS)"
+    echo "  ${GREEN}udp${NC} - UDP 协议 (适合 DNS、游戏、视频流等)"
+    echo ""
     read -p "协议 [tcp/udp] (默认tcp): " protocol
     protocol=${protocol:-tcp}
+    
+    # 验证协议
+    if [[ ! "$protocol" =~ ^(tcp|udp)$ ]]; then
+        print_error "无效的协议，必须是 tcp 或 udp"
+        sleep 2
+        return 1
+    fi
     
     # 创建systemd服务
     cat > /etc/systemd/system/socat-relay-${local_port}.service << EOF
@@ -559,12 +732,46 @@ WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
-    systemctl enable socat-relay-${local_port}
+    systemctl enable socat-relay-${local_port} 2>&1
     systemctl start socat-relay-${local_port}
+    
+    # 检查服务状态
+    sleep 1
+    if systemctl is-active --quiet socat-relay-${local_port}; then
+        print_success "Socat 转发服务已启动"
+    else
+        print_error "Socat 转发服务启动失败"
+        echo ""
+        print_info "查看日志: journalctl -u socat-relay-${local_port} -n 50"
+        read -p "按回车键继续..."
+        return 1
+    fi
     
     save_relay_rule "socat" "$local_port" "$target_ip" "$target_port" "$protocol"
     
+    echo ""
     print_success "Socat 转发配置完成"
+    echo ""
+    echo -e "${CYAN}配置信息:${NC}"
+    echo "  本地端口: ${local_port}"
+    echo "  目标地址: ${target_ip}:${target_port}"
+    echo "  转发协议: ${protocol}"
+    echo "  服务名称: socat-relay-${local_port}"
+    echo ""
+    echo -e "${CYAN}管理命令:${NC}"
+    echo "  查看状态: systemctl status socat-relay-${local_port}"
+    echo "  查看日志: journalctl -u socat-relay-${local_port} -f"
+    echo "  重启服务: systemctl restart socat-relay-${local_port}"
+    echo "  停止服务: systemctl stop socat-relay-${local_port}"
+    echo ""
+    echo -e "${CYAN}测试连接:${NC}"
+    if [[ "$protocol" == "tcp" ]]; then
+        echo "  telnet 127.0.0.1 ${local_port}"
+        echo "  nc -zv 127.0.0.1 ${local_port}"
+    else
+        echo "  nc -u 127.0.0.1 ${local_port}"
+    fi
+    echo ""
     read -p "按回车键继续..."
 }
 
