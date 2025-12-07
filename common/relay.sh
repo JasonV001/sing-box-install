@@ -2,8 +2,56 @@
 
 # ==================== 中转配置模块 ====================
 
+# 获取脚本目录（如果未定义）
+if [[ -z "$SCRIPT_DIR" ]]; then
+    # 获取当前脚本的真实路径
+    CURRENT_SCRIPT="${BASH_SOURCE[0]}"
+    if [[ -L "$CURRENT_SCRIPT" ]]; then
+        CURRENT_SCRIPT="$(readlink -f "$CURRENT_SCRIPT")"
+    fi
+    SCRIPT_DIR="$(cd "$(dirname "$CURRENT_SCRIPT")/.." && pwd)"
+fi
+
 # 中转配置文件
 RELAY_CONFIG="${RELAY_DIR}/relay.json"
+
+# 辅助函数: 查找原生代理链模块
+find_native_relay_module() {
+    # 尝试多个可能的路径
+    local paths=(
+        "${SCRIPT_DIR}/common/singbox_native_relay.sh"
+        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/singbox_native_relay.sh"
+        "$(dirname "${BASH_SOURCE[0]}")/singbox_native_relay.sh"
+    )
+    
+    for path in "${paths[@]}"; do
+        if [[ -f "$path" ]]; then
+            echo "$path"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+# 辅助函数: 加载原生代理链模块
+load_native_relay_module() {
+    local module_path=$(find_native_relay_module)
+    
+    if [[ -n "$module_path" ]]; then
+        source "$module_path"
+        return 0
+    else
+        print_error "无法找到原生代理链模块"
+        echo ""
+        echo "尝试的路径:"
+        echo "  1. ${SCRIPT_DIR}/common/singbox_native_relay.sh"
+        echo "  2. $(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/singbox_native_relay.sh"
+        echo ""
+        echo "请确保文件存在并且路径正确"
+        return 1
+    fi
+}
 
 # 检查当前中转模式
 check_relay_mode() {
@@ -116,8 +164,8 @@ select_standalone_relay() {
         
         # 删除原生代理链
         print_info "正在删除 Sing-box 原生代理链..."
-        if [[ -f "${SCRIPT_DIR}/common/singbox_native_relay.sh" ]]; then
-            source "${SCRIPT_DIR}/common/singbox_native_relay.sh"
+        
+        if load_native_relay_module; then
             remove_native_relay
         fi
         
@@ -207,12 +255,10 @@ select_native_relay() {
     fi
     
     # 加载并调用原生代理链模块
-    if [[ -f "${SCRIPT_DIR}/common/singbox_native_relay.sh" ]]; then
-        source "${SCRIPT_DIR}/common/singbox_native_relay.sh"
+    if load_native_relay_module; then
         configure_native_relay
     else
-        print_error "原生代理链模块不存在"
-        sleep 2
+        sleep 3
     fi
     
     configure_relay
@@ -241,8 +287,7 @@ view_current_relay() {
         echo ""
         
         # 显示原生代理链配置
-        if [[ -f "${SCRIPT_DIR}/common/singbox_native_relay.sh" ]]; then
-            source "${SCRIPT_DIR}/common/singbox_native_relay.sh"
+        if load_native_relay_module; then
             view_native_relay
         fi
     else
@@ -280,8 +325,7 @@ delete_current_relay() {
         
         read -p "确认删除原生代理链配置? [y/N]: " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
-            if [[ -f "${SCRIPT_DIR}/common/singbox_native_relay.sh" ]]; then
-                source "${SCRIPT_DIR}/common/singbox_native_relay.sh"
+            if load_native_relay_module; then
                 remove_native_relay
                 print_success "原生代理链已删除"
             fi
