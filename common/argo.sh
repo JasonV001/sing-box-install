@@ -14,21 +14,23 @@ configure_argo() {
     echo -e "  ${GREEN}2.${NC}  安装 Argo 隧道 (Token 认证)"
     echo -e "  ${GREEN}3.${NC}  安装 Argo 隧道 (JSON 认证)"
     echo -e "  ${GREEN}4.${NC}  查看 Argo 状态"
-    echo -e "  ${GREEN}5.${NC}  重启 Argo 服务"
-    echo -e "  ${GREEN}6.${NC}  卸载 Argo 隧道"
+    echo -e "  ${GREEN}5.${NC}  刷新域名和节点链接"
+    echo -e "  ${GREEN}6.${NC}  重启 Argo 服务"
+    echo -e "  ${GREEN}7.${NC}  卸载 Argo 隧道"
     echo -e "  ${GREEN}0.${NC}  返回主菜单"
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
     
-    read -p "请选择操作 [0-6]: " choice
+    read -p "请选择操作 [0-7]: " choice
     
     case $choice in
         1) install_argo_quick ;;
         2) install_argo_token ;;
         3) install_argo_json ;;
         4) view_argo_status ;;
-        5) restart_argo ;;
-        6) uninstall_argo ;;
+        5) refresh_argo_domain ;;
+        6) restart_argo ;;
+        7) uninstall_argo ;;
         0) return ;;
         *) print_error "无效的选择"; sleep 2; configure_argo ;;
     esac
@@ -127,10 +129,26 @@ EOF
     
     print_success "Argo Quick Tunnel 已启动"
     print_info "等待获取临时域名..."
-    sleep 5
     
-    # 获取临时域名
-    local temp_domain=$(grep -oP 'https://\K[^/]+\.trycloudflare\.com' "${ARGO_DIR}/argo.log" | tail -1)
+    # 等待服务启动并获取域名（最多等待30秒）
+    local temp_domain=""
+    local wait_time=0
+    local max_wait=30
+    
+    while [[ -z "$temp_domain" && $wait_time -lt $max_wait ]]; do
+        sleep 2
+        wait_time=$((wait_time + 2))
+        
+        # 尝试从日志中获取域名
+        if [[ -f "${ARGO_DIR}/argo.log" ]]; then
+            temp_domain=$(grep -oP 'https://\K[^/]+\.trycloudflare\.com' "${ARGO_DIR}/argo.log" | tail -1)
+        fi
+        
+        if [[ -z "$temp_domain" ]]; then
+            echo -n "."
+        fi
+    done
+    echo ""
     
     if [[ -n "$temp_domain" ]]; then
         print_success "临时域名: ${temp_domain}"
@@ -164,7 +182,44 @@ EOF
         echo ""
         cat "${LINK_DIR}/argo_quick_${local_port}.txt"
     else
-        print_warning "未能获取临时域名，请查看日志: ${ARGO_DIR}/argo.log"
+        print_warning "等待超时，未能获取临时域名"
+        echo ""
+        print_info "可能的原因:"
+        echo "  1. cloudflared 服务启动失败"
+        echo "  2. 网络连接问题"
+        echo "  3. 本地端口 ${local_port} 未运行服务"
+        echo ""
+        print_info "排查步骤:"
+        echo "  1. 查看服务状态: systemctl status argo-quick"
+        echo "  2. 查看日志: tail -f ${ARGO_DIR}/argo.log"
+        echo "  3. 检查端口: ss -tuln | grep ${local_port}"
+        echo ""
+        print_info "手动获取域名:"
+        echo "  等待几分钟后执行: grep trycloudflare.com ${ARGO_DIR}/argo.log"
+        echo ""
+        
+        # 即使没有域名，也生成一个占位链接
+        mkdir -p "${LINK_DIR}"
+        cat > "${LINK_DIR}/argo_quick_${local_port}.txt" << EOF
+========================================
+Argo Quick Tunnel 信息
+========================================
+本地端口: ${local_port}
+状态: 等待获取临时域名
+
+临时域名将在服务启动后显示在日志中
+日志文件: ${ARGO_DIR}/argo.log
+
+获取域名命令:
+  grep trycloudflare.com ${ARGO_DIR}/argo.log | tail -1
+
+查看服务状态:
+  systemctl status argo-quick
+
+查看实时日志:
+  tail -f ${ARGO_DIR}/argo.log
+========================================
+EOF
     fi
     
     echo ""
@@ -449,9 +504,33 @@ view_argo_status() {
     
     if systemctl is-active --quiet argo-quick; then
         print_success "Argo Quick Tunnel 运行中"
-        if [[ -f "${ARGO_DIR}/domain.txt" ]]; then
+        
+        # 尝试从日志获取最新域名
+        if [[ -f "${ARGO_DIR}/argo.log" ]]; then
+            local domain=$(grep -oP 'https://\K[^/]+\.trycloudflare\.com' "${ARGO_DIR}/argo.log" | tail -1)
+            if [[ -n "$domain" ]]; then
+                echo -e "  临时域名: ${GREEN}${domain}${NC}"
+                echo "$domain" > "${ARGO_DIR}/domain.txt"
+                
+                # 显示完整链接
+                echo -e "  完整地址: ${GREEN}https://${domain}${NC}"
+                
+                # 检查是否有节点链接
+                local port=$(grep "ExecStart.*--url.*localhost:" /etc/systemd/system/argo-quick.service | grep -oP 'localhost:\K[0-9]+')
+                if [[ -n "$port" && -f "${LINK_DIR}/argo_node_${port}.txt" ]]; then
+                    echo ""
+                    echo -e "${CYAN}节点链接:${NC}"
+                    cat "${LINK_DIR}/argo_node_${port}.txt"
+                fi
+            else
+                print_warning "未能从日志中获取域名"
+                echo -e "  日志文件: ${ARGO_DIR}/argo.log"
+            fi
+        elif [[ -f "${ARGO_DIR}/domain.txt" ]]; then
             local domain=$(cat "${ARGO_DIR}/domain.txt")
             echo -e "  临时域名: ${GREEN}${domain}${NC}"
+        else
+            print_warning "未找到域名信息"
         fi
     elif systemctl is-active --quiet argo-tunnel; then
         print_success "Argo Tunnel 运行中"
@@ -464,8 +543,108 @@ view_argo_status() {
     fi
     
     echo ""
-    echo "详细状态:"
+    echo -e "${CYAN}详细状态:${NC}"
     systemctl status argo-quick 2>/dev/null || systemctl status argo-tunnel 2>/dev/null || echo "未安装"
+    
+    echo ""
+    echo -e "${CYAN}最近日志:${NC}"
+    if [[ -f "${ARGO_DIR}/argo.log" ]]; then
+        tail -10 "${ARGO_DIR}/argo.log"
+    else
+        echo "无日志文件"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..."
+}
+
+# 刷新域名和节点链接
+refresh_argo_domain() {
+    clear
+    print_info "刷新 Argo 域名和节点链接"
+    echo ""
+    
+    if ! systemctl is-active --quiet argo-quick; then
+        print_error "Argo Quick Tunnel 未运行"
+        echo ""
+        print_info "请先启动 Argo Quick Tunnel"
+        read -p "按回车键继续..."
+        return 1
+    fi
+    
+    # 获取端口
+    local port=$(grep "ExecStart.*--url.*localhost:" /etc/systemd/system/argo-quick.service | grep -oP 'localhost:\K[0-9]+')
+    
+    if [[ -z "$port" ]]; then
+        print_error "无法获取端口信息"
+        read -p "按回车键继续..."
+        return 1
+    fi
+    
+    print_info "从日志中获取域名..."
+    
+    # 等待并获取域名
+    local temp_domain=""
+    local wait_time=0
+    local max_wait=15
+    
+    while [[ -z "$temp_domain" && $wait_time -lt $max_wait ]]; do
+        sleep 1
+        wait_time=$((wait_time + 1))
+        
+        if [[ -f "${ARGO_DIR}/argo.log" ]]; then
+            temp_domain=$(grep -oP 'https://\K[^/]+\.trycloudflare\.com' "${ARGO_DIR}/argo.log" | tail -1)
+        fi
+        
+        if [[ -z "$temp_domain" ]]; then
+            echo -n "."
+        fi
+    done
+    echo ""
+    
+    if [[ -n "$temp_domain" ]]; then
+        print_success "临时域名: ${temp_domain}"
+        echo "$temp_domain" > "${ARGO_DIR}/domain.txt"
+        
+        # 重新生成节点链接
+        print_info "生成节点链接..."
+        generate_argo_node_link "$temp_domain" "$port"
+        
+        # 更新信息文件
+        mkdir -p "${LINK_DIR}"
+        cat > "${LINK_DIR}/argo_quick_${port}.txt" << EOF
+========================================
+Argo Quick Tunnel 信息
+========================================
+本地端口: ${port}
+临时域名: ${temp_domain}
+完整地址: https://${temp_domain}
+
+节点链接:
+$(cat "${LINK_DIR}/argo_node_${port}.txt" 2>/dev/null || echo "未生成节点链接")
+
+注意: 临时域名会在重启后变化
+日志文件: ${ARGO_DIR}/argo.log
+
+使用方法:
+1. 确保本地服务运行在端口 ${port}
+2. 通过 https://${temp_domain} 访问
+3. 使用上方节点链接导入客户端
+========================================
+EOF
+        
+        echo ""
+        print_success "域名和节点链接已更新"
+        echo ""
+        cat "${LINK_DIR}/argo_quick_${port}.txt"
+    else
+        print_error "未能获取域名"
+        echo ""
+        print_info "请检查:"
+        echo "  1. Argo 服务是否正常运行: systemctl status argo-quick"
+        echo "  2. 查看日志: tail -f ${ARGO_DIR}/argo.log"
+        echo "  3. 本地端口 ${port} 是否有服务运行"
+    fi
     
     echo ""
     read -p "按回车键继续..."
@@ -478,6 +657,18 @@ restart_argo() {
     if systemctl is-active --quiet argo-quick; then
         systemctl restart argo-quick
         print_success "Argo Quick Tunnel 已重启"
+        
+        # 重启后等待并刷新域名
+        print_info "等待服务重新启动..."
+        sleep 3
+        
+        # 调用刷新函数
+        echo ""
+        read -p "是否刷新域名和节点链接? [Y/n]: " refresh_confirm
+        if [[ ! "$refresh_confirm" =~ ^[Nn]$ ]]; then
+            refresh_argo_domain
+            return
+        fi
     elif systemctl is-active --quiet argo-tunnel; then
         systemctl restart argo-tunnel
         print_success "Argo Tunnel 已重启"
