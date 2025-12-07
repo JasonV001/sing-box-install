@@ -1009,37 +1009,104 @@ install_gost() {
     # 检查是否已存在但未在 PATH 中
     if [[ -f "/usr/local/bin/gost" ]]; then
         chmod +x /usr/local/bin/gost
-        print_success "Gost 已存在"
-        return 0
+        if /usr/local/bin/gost -V &>/dev/null; then
+            print_success "Gost 已存在"
+            return 0
+        fi
     fi
     
     print_info "安装 Gost..."
     
+    # 检测系统架构
     local arch=$(uname -m)
     local gost_arch
     
     case $arch in
         x86_64) gost_arch="linux-amd64" ;;
-        aarch64) gost_arch="linux-arm64" ;;
-        *) print_error "不支持的架构: $arch"; return 1 ;;
+        aarch64|arm64) gost_arch="linux-arm64" ;;
+        armv7l) gost_arch="linux-armv7" ;;
+        *) 
+            print_error "不支持的架构: $arch"
+            echo ""
+            echo "支持的架构: x86_64, aarch64, armv7l"
+            return 1
+            ;;
     esac
     
-    local latest_version=$(curl -s https://api.github.com/repos/ginuerzh/gost/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
-    if [[ -z "$latest_version" ]]; then
-        print_error "无法获取 Gost 版本信息"
+    # 使用固定版本，避免 API 限制
+    local version="v2.11.5"
+    
+    # 定义多个下载源
+    local download_urls=(
+        "https://github.com/ginuerzh/gost/releases/download/${version}/gost-${gost_arch}-${version#v}.gz"
+        "https://ghproxy.com/https://github.com/ginuerzh/gost/releases/download/${version}/gost-${gost_arch}-${version#v}.gz"
+        "https://mirror.ghproxy.com/https://github.com/ginuerzh/gost/releases/download/${version}/gost-${gost_arch}-${version#v}.gz"
+    )
+    
+    print_info "下载 Gost ${version}..."
+    
+    local download_success=false
+    local temp_dir=$(mktemp -d)
+    cd "$temp_dir" || return 1
+    
+    # 尝试每个下载源
+    for url in "${download_urls[@]}"; do
+        echo "  尝试: $(echo "$url" | cut -d'/' -f3)"
+        
+        if wget -q --timeout=30 --tries=2 -O gost.gz "$url" 2>/dev/null; then
+            if [[ -f gost.gz ]] && [[ $(stat -f%z gost.gz 2>/dev/null || stat -c%s gost.gz 2>/dev/null) -gt 1000 ]]; then
+                print_success "下载成功"
+                download_success=true
+                break
+            else
+                print_warning "下载的文件无效，尝试下一个源..."
+                rm -f gost.gz
+            fi
+        else
+            print_warning "下载失败，尝试下一个源..."
+        fi
+    done
+    
+    if [[ "$download_success" != true ]]; then
+        print_error "所有下载源都失败了"
+        cd - >/dev/null
+        rm -rf "$temp_dir"
+        echo ""
+        echo -e "${YELLOW}手动安装方法:${NC}"
+        echo "1. 访问: https://github.com/ginuerzh/gost/releases"
+        echo "2. 下载: gost-${gost_arch}-${version#v}.gz"
+        echo "3. 解压: gunzip gost-${gost_arch}-${version#v}.gz"
+        echo "4. 安装: mv gost-${gost_arch}-${version#v} /usr/local/bin/gost"
+        echo "5. 授权: chmod +x /usr/local/bin/gost"
+        echo ""
         return 1
     fi
     
-    local download_url="https://github.com/ginuerzh/gost/releases/download/${latest_version}/gost-${gost_arch}-${latest_version#v}.gz"
-    
-    print_info "下载 Gost ${latest_version}..."
-    wget -qO gost.gz "$download_url" || { print_error "下载失败"; return 1; }
-    gunzip gost.gz
-    chmod +x gost
-    mv gost /usr/local/bin/
-    mkdir -p /etc/gost
-    
-    print_success "Gost 安装完成"
+    # 解压和安装
+    print_info "正在安装..."
+    if gunzip gost.gz 2>/dev/null; then
+        chmod +x gost
+        mv gost /usr/local/bin/gost
+        mkdir -p /etc/gost
+        
+        # 验证安装
+        if /usr/local/bin/gost -V &>/dev/null; then
+            print_success "Gost 安装完成"
+            cd - >/dev/null
+            rm -rf "$temp_dir"
+            return 0
+        else
+            print_error "Gost 安装后无法运行"
+            cd - >/dev/null
+            rm -rf "$temp_dir"
+            return 1
+        fi
+    else
+        print_error "解压失败"
+        cd - >/dev/null
+        rm -rf "$temp_dir"
+        return 1
+    fi
 }
 
 # 保存中转规则
