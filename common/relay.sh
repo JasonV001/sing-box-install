@@ -378,16 +378,31 @@ add_socat_relay() {
     
     # 检查socat是否安装
     if ! command -v socat &>/dev/null; then
-        print_info "检测到 socat 未安装,正在安装..."
+        print_warning "检测到 socat 未安装"
+        read -p "是否现在安装 socat? [Y/n]: " install_socat
+        if [[ "$install_socat" =~ ^[Nn]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 1
+        fi
+        
+        print_info "正在安装 socat..."
         if [[ -f /etc/os-release ]]; then
             . /etc/os-release
             if [[ "$ID" =~ (debian|ubuntu) ]]; then
-                apt-get install -y socat
+                apt-get update -qq && apt-get install -y socat
             elif [[ "$ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
                 yum install -y socat
             fi
         fi
-        print_success "socat 安装完成"
+        
+        if command -v socat &>/dev/null; then
+            print_success "socat 安装完成"
+        else
+            print_error "socat 安装失败"
+            read -p "按回车键继续..."
+            return 1
+        fi
     else
         print_success "socat 已安装"
     fi
@@ -461,7 +476,15 @@ add_gost_relay() {
     
     # 检查gost是否安装
     if ! command -v gost &>/dev/null; then
-        print_info "检测到 Gost 未安装,正在安装..."
+        print_warning "检测到 Gost 未安装"
+        read -p "是否现在安装 Gost? [Y/n]: " install_gost_confirm
+        if [[ "$install_gost_confirm" =~ ^[Nn]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 1
+        fi
+        
+        print_info "正在安装 Gost..."
         install_gost
         if [[ $? -ne 0 ]]; then
             print_error "Gost 安装失败"

@@ -180,16 +180,23 @@ generate_argo_node_link() {
     local config_file="${CONFIG_DIR}/config.json"
     
     if [[ ! -f "$config_file" ]]; then
-        print_warning "配置文件不存在，无法生成节点链接"
-        return 1
+        print_warning "配置文件不存在，生成通用 HTTPS 链接"
+        echo "https://${domain}" > "${LINK_DIR}/argo_node_${port}.txt"
+        return 0
     fi
     
     # 查找对应端口的inbound配置
     local inbound=$(jq -r ".inbounds[] | select(.listen_port == $port)" "$config_file" 2>/dev/null)
     
     if [[ -z "$inbound" ]]; then
-        print_warning "未找到端口 $port 的配置"
-        return 1
+        print_warning "未找到端口 $port 的配置，生成通用 VLESS 节点链接"
+        # 生成一个新的 UUID
+        local new_uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$(shuf -i 1000-9999 -n 1)")
+        local link="vless://${new_uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-Port${port}"
+        echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
+        print_success "已生成通用 VLESS 节点链接"
+        print_info "注意: 请在 Sing-box 中配置端口 ${port} 的 VLESS 服务，UUID: ${new_uuid}"
+        return 0
     fi
     
     local protocol=$(echo "$inbound" | jq -r '.type')
@@ -200,17 +207,23 @@ generate_argo_node_link() {
         vless)
             local uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
             if [[ -n "$uuid" ]]; then
-                local link="vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}#Argo-${tag}"
+                local link="vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
                 echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
                 print_success "已生成 VLESS 节点链接"
+                echo ""
+                echo -e "${GREEN}节点链接:${NC}"
+                echo "$link"
             fi
             ;;
         trojan)
             local password=$(echo "$inbound" | jq -r '.users[0].password // empty')
             if [[ -n "$password" ]]; then
-                local link="trojan://${password}@${domain}:443?security=tls&sni=${domain}&type=ws&host=${domain}#Argo-${tag}"
+                local link="trojan://${password}@${domain}:443?security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
                 echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
                 print_success "已生成 Trojan 节点链接"
+                echo ""
+                echo -e "${GREEN}节点链接:${NC}"
+                echo "$link"
             fi
             ;;
         vmess)
@@ -236,10 +249,13 @@ EOF
                 local link="vmess://$(echo -n "$vmess_json" | base64 -w 0)"
                 echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
                 print_success "已生成 VMess 节点链接"
+                echo ""
+                echo -e "${GREEN}节点链接:${NC}"
+                echo "$link"
             fi
             ;;
         *)
-            print_warning "协议 $protocol 暂不支持生成 Argo 节点链接"
+            print_warning "协议 $protocol 暂不支持生成 Argo 节点链接，生成通用链接"
             echo "https://${domain}" > "${LINK_DIR}/argo_node_${port}.txt"
             ;;
     esac
