@@ -331,6 +331,47 @@ check_dependencies() {
     fi
 }
 
+# ==================== 安装证书工具 ====================
+install_acme_tools() {
+    # 安装 socat
+    if ! command -v socat &>/dev/null; then
+        print_info "安装 socat..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y socat
+        elif command -v yum &>/dev/null; then
+            yum install -y socat
+        fi
+    fi
+    
+    # 安装 crontab
+    if ! command -v crontab &>/dev/null; then
+        print_info "安装 crontab..."
+        if command -v apt-get &>/dev/null; then
+            apt-get install -y cron
+        elif command -v yum &>/dev/null; then
+            yum install -y cronie
+        fi
+        systemctl enable cron 2>/dev/null || systemctl enable crond 2>/dev/null
+        systemctl start cron 2>/dev/null || systemctl start crond 2>/dev/null
+    fi
+    
+    # 安装 acme.sh
+    if [[ ! -f ~/.acme.sh/acme.sh ]]; then
+        print_info "安装 acme.sh..."
+        curl -s https://get.acme.sh | sh -s email=admin@example.com --force
+        source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null
+    fi
+    
+    # 验证安装
+    if [[ -f ~/.acme.sh/acme.sh ]]; then
+        print_success "证书工具已就绪"
+        return 0
+    else
+        print_error "acme.sh 安装失败"
+        return 1
+    fi
+}
+
 # ==================== 更新证书 ====================
 update_certificate() {
     clear
@@ -342,9 +383,10 @@ update_certificate() {
     echo "  2. 使用 CloudFlare API 申请"
     echo "  3. 手动指定证书路径"
     echo "  4. 续期现有证书"
+    echo "  5. 删除证书"
     echo "  0. 返回"
     echo ""
-    read -p "请选择 [0-4]: " cert_choice
+    read -p "请选择 [0-5]: " cert_choice
     
     case $cert_choice in
         1)
@@ -358,6 +400,9 @@ update_certificate() {
             ;;
         4)
             renew_certificate
+            ;;
+        5)
+            delete_certificate
             ;;
         0)
             return
@@ -439,7 +484,8 @@ apply_certificate_auto() {
         
         $ACME_SH --set-default-ca --server "$ca_server"
         
-        if $ACME_SH --issue -d "$domain" --standalone -k ec-256 --force; then
+        # 使用 standalone 模式，HTTP-01 验证
+        if $ACME_SH --issue -d "$domain" --standalone --httpport 80 -k ec-256 --force 2>&1 | tee /tmp/acme_output.log; then
             print_success "证书申请成功"
             
             # 安装证书
@@ -455,9 +501,27 @@ apply_certificate_auto() {
             success=true
             break
         else
-            print_warning "从 ${ca_server} 申请失败，尝试下一个..."
+            print_warning "从 ${ca_server} 申请失败"
+            
+            # 显示错误信息
+            if grep -q "Verify error" /tmp/acme_output.log; then
+                echo ""
+                print_error "域名验证失败"
+                echo "  可能原因："
+                echo "  1. 域名未正确解析到本服务器"
+                echo "  2. 防火墙阻止了 80 端口"
+                echo "  3. 80 端口被其他服务占用"
+            fi
+            
+            echo ""
+            read -p "是否尝试下一个 CA? [Y/n]: " try_next
+            if [[ "$try_next" =~ ^[Nn]$ ]]; then
+                break
+            fi
         fi
     done
+    
+    rm -f /tmp/acme_output.log
     
     # 恢复服务
     if [[ "$need_restart" == "true" ]]; then
@@ -477,6 +541,8 @@ apply_certificate_auto() {
         return 1
     fi
 }
+
+
 
 # 使用 CloudFlare API 申请证书
 apply_certificate_cf() {
@@ -501,34 +567,11 @@ apply_certificate_cf() {
     print_info "使用 CloudFlare API 申请证书: ${domain}"
     echo ""
     
-    # 安装 crontab（如果不存在）
-    if ! command -v crontab &>/dev/null; then
-        print_info "安装 crontab..."
-        if command -v apt-get &>/dev/null; then
-            apt-get update -qq && apt-get install -y cron
-        elif command -v yum &>/dev/null; then
-            yum install -y cronie
-        fi
-        systemctl enable cron 2>/dev/null || systemctl enable crond 2>/dev/null
-        systemctl start cron 2>/dev/null || systemctl start crond 2>/dev/null
-    fi
-    
-    # 安装 acme.sh
-    if ! command -v acme.sh &>/dev/null && [[ ! -f ~/.acme.sh/acme.sh ]]; then
-        print_info "安装 acme.sh..."
-        curl -s https://get.acme.sh | sh -s email=admin@${domain} --force
-        
-        # 重新加载环境变量
-        source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null
-    fi
+    # 安装证书工具
+    install_acme_tools || return 1
     
     # 设置 acme.sh 路径
-    if [[ -f ~/.acme.sh/acme.sh ]]; then
-        ACME_SH=~/.acme.sh/acme.sh
-    else
-        print_error "acme.sh 安装失败"
-        return 1
-    fi
+    local ACME_SH=~/.acme.sh/acme.sh
     
     # 尝试从多个 CA 申请证书
     local success=false
@@ -628,6 +671,147 @@ renew_certificate() {
     else
         print_error "证书续期失败"
     fi
+}
+
+# 删除证书
+delete_certificate() {
+    clear
+    echo -e "${CYAN}═══════════════════ 删除证书 ═══════════════════${NC}"
+    echo ""
+    
+    # 列出所有证书
+    local cert_files=($(find /etc/ssl/private -name "*.crt" 2>/dev/null))
+    
+    if [[ ${#cert_files[@]} -eq 0 ]]; then
+        print_warning "未找到任何证书文件"
+        echo ""
+        read -p "按回车键继续..."
+        return
+    fi
+    
+    echo -e "${GREEN}已安装的证书:${NC}"
+    echo ""
+    
+    local index=1
+    declare -A cert_map
+    
+    for cert_file in "${cert_files[@]}"; do
+        local domain=$(basename "$cert_file" .crt)
+        local key_file="/etc/ssl/private/${domain}.key"
+        
+        echo -e "  ${CYAN}[$index]${NC} ${domain}"
+        
+        # 显示证书信息
+        if [[ -f "$cert_file" ]]; then
+            local expiry=$(openssl x509 -in "$cert_file" -noout -enddate 2>/dev/null | cut -d= -f2)
+            if [[ -n "$expiry" ]]; then
+                echo "      过期时间: ${expiry}"
+            fi
+        fi
+        
+        cert_map[$index]="$domain"
+        ((index++))
+        echo ""
+    done
+    
+    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  ${GREEN}A.${NC}  删除所有证书"
+    echo -e "  ${GREEN}0.${NC}  返回"
+    echo ""
+    
+    read -p "请选择要删除的证书 [1-$((index-1))/A/0]: " del_choice
+    
+    case $del_choice in
+        [Aa])
+            delete_all_certificates
+            ;;
+        0)
+            return
+            ;;
+        [1-9]|[1-9][0-9])
+            if [[ -n "${cert_map[$del_choice]}" ]]; then
+                delete_single_certificate "${cert_map[$del_choice]}"
+            else
+                print_error "无效的选择"
+                sleep 2
+            fi
+            ;;
+        *)
+            print_error "无效的选择"
+            sleep 2
+            ;;
+    esac
+    
+    delete_certificate
+}
+
+# 删除单个证书
+delete_single_certificate() {
+    local domain=$1
+    local cert_file="/etc/ssl/private/${domain}.crt"
+    local key_file="/etc/ssl/private/${domain}.key"
+    
+    echo ""
+    print_warning "确认删除证书: ${domain}?"
+    read -p "输入 yes 确认: " confirm
+    
+    if [[ "$confirm" == "yes" ]]; then
+        # 从 acme.sh 中删除
+        if [[ -f ~/.acme.sh/acme.sh ]]; then
+            print_info "从 acme.sh 中删除..."
+            ~/.acme.sh/acme.sh --remove -d "$domain" 2>/dev/null
+        fi
+        
+        # 删除证书文件
+        rm -f "$cert_file" "$key_file"
+        
+        print_success "证书已删除"
+        echo "  已删除: ${cert_file}"
+        echo "  已删除: ${key_file}"
+    else
+        print_info "取消删除"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..."
+}
+
+# 删除所有证书
+delete_all_certificates() {
+    echo ""
+    print_warning "此操作将删除所有证书文件！"
+    echo ""
+    read -p "确认删除所有证书? 输入 yes 确认: " confirm
+    
+    if [[ "$confirm" == "yes" ]]; then
+        # 从 acme.sh 中删除所有证书
+        if [[ -f ~/.acme.sh/acme.sh ]]; then
+            print_info "从 acme.sh 中删除所有证书..."
+            
+            # 列出所有域名并删除
+            for domain_dir in ~/.acme.sh/*/; do
+                if [[ -d "$domain_dir" ]]; then
+                    local domain=$(basename "$domain_dir")
+                    if [[ "$domain" != "ca" && "$domain" != "http.header" ]]; then
+                        ~/.acme.sh/acme.sh --remove -d "$domain" 2>/dev/null
+                    fi
+                fi
+            done
+        fi
+        
+        # 删除所有证书文件
+        print_info "删除证书文件..."
+        rm -f /etc/ssl/private/*.crt
+        rm -f /etc/ssl/private/*.key
+        
+        print_success "所有证书已删除"
+    else
+        print_info "取消删除"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..."
 }
 
 # ==================== 节点管理 ====================
