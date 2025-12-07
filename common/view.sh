@@ -23,7 +23,13 @@ view_nodes() {
             has_nodes=true
             
             # 遍历所有inbounds，按协议分类
-            while IFS='|' read -r type tag port; do
+            # 使用 mapfile 避免子shell导致的变量作用域问题
+            mapfile -t inbound_lines < <(jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file" 2>/dev/null)
+            
+            for line in "${inbound_lines[@]}"; do
+                [[ -z "$line" ]] && continue
+                IFS='|' read -r type tag port <<< "$line"
+                
                 # 统计每种协议的数量
                 if [[ -z "${node_types[$type]}" ]]; then
                     node_types[$type]=1
@@ -33,7 +39,7 @@ view_nodes() {
                 
                 # 保存节点信息
                 node_list+=("$type|$tag|$port|singbox")
-            done < <(jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file")
+            done
         fi
     fi
     
