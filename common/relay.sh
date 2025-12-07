@@ -1088,20 +1088,29 @@ install_gost() {
     
     # 尝试每个下载源
     for url in "${download_urls[@]}"; do
-        echo "  尝试: $(echo "$url" | cut -d'/' -f3)"
+        local source_name=$(echo "$url" | cut -d'/' -f3)
+        echo "  尝试: $source_name"
+        echo "  URL: $url"
         
-        if wget -q --timeout=30 --tries=2 -O "$filename" "$url" 2>/dev/null; then
-            if [[ -f "$filename" ]] && [[ $(stat -f%z "$filename" 2>/dev/null || stat -c%s "$filename" 2>/dev/null) -gt 1000 ]]; then
-                print_success "下载成功"
-                download_success=true
-                break
+        # 尝试下载，显示详细错误
+        if wget --timeout=30 --tries=2 -O "$filename" "$url" 2>&1 | grep -v "^--"; then
+            if [[ -f "$filename" ]]; then
+                local file_size=$(stat -f%z "$filename" 2>/dev/null || stat -c%s "$filename" 2>/dev/null)
+                if [[ $file_size -gt 1000 ]]; then
+                    print_success "下载成功 (${file_size} 字节)"
+                    download_success=true
+                    break
+                else
+                    print_warning "文件太小 (${file_size} 字节)，可能下载失败"
+                    rm -f "$filename"
+                fi
             else
-                print_warning "下载的文件无效，尝试下一个源..."
-                rm -f "$filename"
+                print_warning "下载后文件不存在"
             fi
         else
-            print_warning "下载失败，尝试下一个源..."
+            print_warning "下载失败"
         fi
+        echo ""
     done
     
     if [[ "$download_success" != true ]]; then
