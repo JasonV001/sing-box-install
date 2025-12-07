@@ -126,7 +126,16 @@ add_socat_relay() {
     # 检查socat是否安装
     if ! command -v socat &>/dev/null; then
         print_info "安装 socat..."
-        apt-get install -y socat || yum install -y socat
+        if [[ -f /etc/os-release ]]; then
+            . /etc/os-release
+            if [[ "$ID" =~ (debian|ubuntu) ]]; then
+                apt-get install -y socat
+            elif [[ "$ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
+                yum install -y socat
+            fi
+        fi
+    else
+        print_success "socat 已安装"
     fi
     
     read -p "请输入本地监听端口: " local_port
@@ -214,19 +223,40 @@ EOF
 
 # 安装gost
 install_gost() {
+    # 检查是否已安装
+    if command -v gost &>/dev/null; then
+        print_success "Gost 已安装"
+        return 0
+    fi
+    
+    # 检查是否已存在但未在 PATH 中
+    if [[ -f "/usr/local/bin/gost" ]]; then
+        chmod +x /usr/local/bin/gost
+        print_success "Gost 已存在"
+        return 0
+    fi
+    
+    print_info "安装 Gost..."
+    
     local arch=$(uname -m)
     local gost_arch
     
     case $arch in
         x86_64) gost_arch="linux-amd64" ;;
         aarch64) gost_arch="linux-arm64" ;;
-        *) print_error "不支持的架构"; return 1 ;;
+        *) print_error "不支持的架构: $arch"; return 1 ;;
     esac
     
     local latest_version=$(curl -s https://api.github.com/repos/ginuerzh/gost/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+    if [[ -z "$latest_version" ]]; then
+        print_error "无法获取 Gost 版本信息"
+        return 1
+    fi
+    
     local download_url="https://github.com/ginuerzh/gost/releases/download/${latest_version}/gost-${gost_arch}-${latest_version#v}.gz"
     
-    wget -qO gost.gz "$download_url"
+    print_info "下载 Gost ${latest_version}..."
+    wget -qO gost.gz "$download_url" || { print_error "下载失败"; return 1; }
     gunzip gost.gz
     chmod +x gost
     mv gost /usr/local/bin/

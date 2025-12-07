@@ -71,6 +71,132 @@ EOF
     read -p "按回车键继续..."
 }
 
+# Trojan+WebSocket
+configure_trojan_ws() {
+    clear
+    print_info "配置 Trojan+WebSocket 节点"
+    
+    read -p "请输入监听端口 (默认443): " port
+    port=${port:-443}
+    
+    local password=$(openssl rand -hex 16)
+    local path="/$(openssl rand -hex 4)"
+    print_success "密码: ${password}"
+    print_success "Path: ${path}"
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    [[ ! -f "$config_file" ]] && create_base_config
+    
+    local inbound=$(cat <<EOF
+{
+  "type": "trojan",
+  "tag": "trojan-ws-in-${port}",
+  "listen": "::",
+  "listen_port": ${port},
+  "users": [{"password": "${password}"}],
+  "transport": {"type": "ws", "path": "${path}"}
+}
+EOF
+)
+    
+    jq ".inbounds += [$inbound]" "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
+    systemctl restart sing-box
+    
+    if systemctl is-active --quiet sing-box; then
+        local link="trojan://${password}@${SERVER_IP}:${port}?type=ws&path=${path}#Trojan-WS-${SERVER_IP}"
+        mkdir -p "${LINK_DIR}"
+        echo -e "Trojan+WebSocket\n服务器: ${SERVER_IP}\n端口: ${port}\n密码: ${password}\nPath: ${path}\n\n${link}" > "${LINK_DIR}/trojan_ws_${port}.txt"
+        print_success "配置完成"
+        cat "${LINK_DIR}/trojan_ws_${port}.txt"
+    fi
+    
+    read -p "按回车键继续..."
+}
+
+# Trojan+gRPC
+configure_trojan_grpc() {
+    clear
+    print_info "配置 Trojan+gRPC 节点"
+    
+    read -p "请输入监听端口 (默认443): " port
+    port=${port:-443}
+    
+    local password=$(openssl rand -hex 16)
+    local service_name="grpc$(openssl rand -hex 4)"
+    print_success "密码: ${password}"
+    print_success "Service Name: ${service_name}"
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    [[ ! -f "$config_file" ]] && create_base_config
+    
+    local inbound=$(cat <<EOF
+{
+  "type": "trojan",
+  "tag": "trojan-grpc-in-${port}",
+  "listen": "::",
+  "listen_port": ${port},
+  "users": [{"password": "${password}"}],
+  "transport": {"type": "grpc", "service_name": "${service_name}"}
+}
+EOF
+)
+    
+    jq ".inbounds += [$inbound]" "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
+    systemctl restart sing-box
+    
+    if systemctl is-active --quiet sing-box; then
+        local link="trojan://${password}@${SERVER_IP}:${port}?type=grpc&serviceName=${service_name}#Trojan-gRPC-${SERVER_IP}"
+        mkdir -p "${LINK_DIR}"
+        echo -e "Trojan+gRPC\n服务器: ${SERVER_IP}\n端口: ${port}\n密码: ${password}\nService: ${service_name}\n\n${link}" > "${LINK_DIR}/trojan_grpc_${port}.txt"
+        print_success "配置完成"
+        cat "${LINK_DIR}/trojan_grpc_${port}.txt"
+    fi
+    
+    read -p "按回车键继续..."
+}
+
+# Trojan+HTTPUpgrade
+configure_trojan_httpupgrade() {
+    clear
+    print_info "配置 Trojan+HTTPUpgrade 节点"
+    
+    read -p "请输入监听端口 (默认443): " port
+    port=${port:-443}
+    
+    local password=$(openssl rand -hex 16)
+    local path="/$(openssl rand -hex 4)"
+    print_success "密码: ${password}"
+    print_success "Path: ${path}"
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    [[ ! -f "$config_file" ]] && create_base_config
+    
+    local inbound=$(cat <<EOF
+{
+  "type": "trojan",
+  "tag": "trojan-httpupgrade-in-${port}",
+  "listen": "::",
+  "listen_port": ${port},
+  "users": [{"password": "${password}"}],
+  "transport": {"type": "httpupgrade", "path": "${path}"}
+}
+EOF
+)
+    
+    jq ".inbounds += [$inbound]" "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
+    systemctl restart sing-box
+    
+    if systemctl is-active --quiet sing-box; then
+        local link="trojan://${password}@${SERVER_IP}:${port}?type=httpupgrade&path=${path}#Trojan-HTTPUpgrade-${SERVER_IP}"
+        mkdir -p "${LINK_DIR}"
+        echo -e "Trojan+HTTPUpgrade\n服务器: ${SERVER_IP}\n端口: ${port}\n密码: ${password}\nPath: ${path}\n\n${link}" > "${LINK_DIR}/trojan_httpupgrade_${port}.txt"
+        print_success "配置完成"
+        cat "${LINK_DIR}/trojan_httpupgrade_${port}.txt"
+    fi
+    
+    read -p "按回车键继续..."
+}
+
 # Trojan+TLS
 configure_trojan_tcp_tls() {
     clear
@@ -122,6 +248,124 @@ EOF
         echo -e "Trojan+TLS\n服务器: ${SERVER_IP}\n端口: ${port}\n密码: ${password}\nSNI: ${domain}\n\n${link}" > "${LINK_DIR}/trojan_tls_${port}.txt"
         print_success "配置完成"
         cat "${LINK_DIR}/trojan_tls_${port}.txt"
+    fi
+    
+    read -p "按回车键继续..."
+}
+
+# Trojan+WebSocket+TLS
+configure_trojan_ws_tls() {
+    clear
+    print_info "配置 Trojan+WebSocket+TLS 节点"
+    
+    read -p "请输入监听端口 (默认443): " port
+    port=${port:-443}
+    
+    read -p "请输入域名 (默认example.com): " domain
+    domain=${domain:-example.com}
+    
+    local password=$(openssl rand -hex 16)
+    local path="/$(openssl rand -hex 4)"
+    print_success "密码: ${password}"
+    print_success "Path: ${path}"
+    
+    # 生成证书
+    local cert_dir="${CERT_DIR}/${domain}"
+    mkdir -p "$cert_dir"
+    openssl req -x509 -nodes -newkey rsa:2048 -days 36500 \
+        -keyout "${cert_dir}/private.key" \
+        -out "${cert_dir}/cert.pem" \
+        -subj "/CN=${domain}" >/dev/null 2>&1
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    [[ ! -f "$config_file" ]] && create_base_config
+    
+    local inbound=$(cat <<EOF
+{
+  "type": "trojan",
+  "tag": "trojan-ws-tls-in-${port}",
+  "listen": "::",
+  "listen_port": ${port},
+  "users": [{"password": "${password}"}],
+  "transport": {"type": "ws", "path": "${path}"},
+  "tls": {
+    "enabled": true,
+    "server_name": "${domain}",
+    "certificate_path": "${cert_dir}/cert.pem",
+    "key_path": "${cert_dir}/private.key"
+  }
+}
+EOF
+)
+    
+    jq ".inbounds += [$inbound]" "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
+    systemctl restart sing-box
+    
+    if systemctl is-active --quiet sing-box; then
+        local link="trojan://${password}@${SERVER_IP}:${port}?security=tls&sni=${domain}&type=ws&path=${path}#Trojan-WS-TLS-${SERVER_IP}"
+        mkdir -p "${LINK_DIR}"
+        echo -e "Trojan+WS+TLS\n服务器: ${SERVER_IP}\n端口: ${port}\n密码: ${password}\nSNI: ${domain}\nPath: ${path}\n\n${link}" > "${LINK_DIR}/trojan_ws_tls_${port}.txt"
+        print_success "配置完成"
+        cat "${LINK_DIR}/trojan_ws_tls_${port}.txt"
+    fi
+    
+    read -p "按回车键继续..."
+}
+
+# Trojan+gRPC+TLS
+configure_trojan_grpc_tls() {
+    clear
+    print_info "配置 Trojan+gRPC+TLS 节点"
+    
+    read -p "请输入监听端口 (默认443): " port
+    port=${port:-443}
+    
+    read -p "请输入域名 (默认example.com): " domain
+    domain=${domain:-example.com}
+    
+    local password=$(openssl rand -hex 16)
+    local service_name="grpc$(openssl rand -hex 4)"
+    print_success "密码: ${password}"
+    print_success "Service Name: ${service_name}"
+    
+    # 生成证书
+    local cert_dir="${CERT_DIR}/${domain}"
+    mkdir -p "$cert_dir"
+    openssl req -x509 -nodes -newkey rsa:2048 -days 36500 \
+        -keyout "${cert_dir}/private.key" \
+        -out "${cert_dir}/cert.pem" \
+        -subj "/CN=${domain}" >/dev/null 2>&1
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    [[ ! -f "$config_file" ]] && create_base_config
+    
+    local inbound=$(cat <<EOF
+{
+  "type": "trojan",
+  "tag": "trojan-grpc-tls-in-${port}",
+  "listen": "::",
+  "listen_port": ${port},
+  "users": [{"password": "${password}"}],
+  "transport": {"type": "grpc", "service_name": "${service_name}"},
+  "tls": {
+    "enabled": true,
+    "server_name": "${domain}",
+    "certificate_path": "${cert_dir}/cert.pem",
+    "key_path": "${cert_dir}/private.key"
+  }
+}
+EOF
+)
+    
+    jq ".inbounds += [$inbound]" "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
+    systemctl restart sing-box
+    
+    if systemctl is-active --quiet sing-box; then
+        local link="trojan://${password}@${SERVER_IP}:${port}?security=tls&sni=${domain}&type=grpc&serviceName=${service_name}#Trojan-gRPC-TLS-${SERVER_IP}"
+        mkdir -p "${LINK_DIR}"
+        echo -e "Trojan+gRPC+TLS\n服务器: ${SERVER_IP}\n端口: ${port}\n密码: ${password}\nSNI: ${domain}\nService: ${service_name}\n\n${link}" > "${LINK_DIR}/trojan_grpc_tls_${port}.txt"
+        print_success "配置完成"
+        cat "${LINK_DIR}/trojan_grpc_tls_${port}.txt"
     fi
     
     read -p "按回车键继续..."

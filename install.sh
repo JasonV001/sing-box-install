@@ -11,7 +11,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 INSTALL_DIR="/opt/sing-box-script"
-REPO_URL="https://github.com/your-repo/sing-box-modular"
+REPO_URL="https://github.com/JasonV001/sing-box-install"
 
 echo -e "${CYAN}"
 echo "╔════════════════════════════════════════════════════════════╗"
@@ -36,16 +36,37 @@ fi
 
 echo -e "${GREEN}检测到系统: ${OS}${NC}"
 
-# 安装依赖
-echo -e "${CYAN}安装依赖...${NC}"
+# 检查并安装依赖
+echo -e "${CYAN}检查依赖...${NC}"
 
-if [[ "$ID" =~ (debian|ubuntu) ]]; then
-    apt-get update -qq
-    apt-get install -y curl wget git jq
-elif [[ "$ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
-    yum install -y curl wget git jq
+# 定义必需的依赖
+REQUIRED_DEPS=("curl" "wget" "jq")
+MISSING_DEPS=()
+
+# 检查哪些依赖缺失
+for dep in "${REQUIRED_DEPS[@]}"; do
+    if ! command -v "$dep" &>/dev/null; then
+        MISSING_DEPS+=("$dep")
+        echo -e "${YELLOW}  缺少: $dep${NC}"
+    else
+        echo -e "${GREEN}  已安装: $dep${NC}"
+    fi
+done
+
+# 只安装缺失的依赖
+if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+    echo -e "${CYAN}安装缺失的依赖: ${MISSING_DEPS[*]}${NC}"
+    
+    if [[ "$ID" =~ (debian|ubuntu) ]]; then
+        apt-get update -qq
+        apt-get install -y "${MISSING_DEPS[@]}"
+    elif [[ "$ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
+        yum install -y "${MISSING_DEPS[@]}"
+    else
+        echo -e "${YELLOW}警告: 未知系统，请手动安装: ${MISSING_DEPS[*]}${NC}"
+    fi
 else
-    echo -e "${YELLOW}警告: 未知系统，尝试继续...${NC}"
+    echo -e "${GREEN}所有依赖已安装${NC}"
 fi
 
 # 创建安装目录
@@ -56,16 +77,41 @@ cd "${INSTALL_DIR}"
 # 下载脚本文件
 echo -e "${CYAN}下载脚本文件...${NC}"
 
-# 如果有git仓库，使用git clone
-if [[ -n "$REPO_URL" ]] && git ls-remote "$REPO_URL" &>/dev/null; then
-    git clone "$REPO_URL" .
-else
-    # 否则手动创建文件结构
-    mkdir -p common protocols
-    
-    # 这里可以添加从其他源下载文件的逻辑
-    echo -e "${YELLOW}注意: 请手动将脚本文件放置到 ${INSTALL_DIR}${NC}"
-fi
+# GitHub raw 文件基础 URL
+BASE_URL="https://raw.githubusercontent.com/JasonV001/sing-box-install/main"
+
+# 创建目录结构
+mkdir -p common protocols
+
+# 下载核心脚本
+echo -e "${CYAN}下载核心脚本...${NC}"
+wget -q "${BASE_URL}/yb_new.sh" -O yb_new.sh || { echo -e "${RED}下载 yb_new.sh 失败${NC}"; exit 1; }
+wget -q "${BASE_URL}/test.sh" -O test.sh || echo -e "${YELLOW}test.sh 下载失败，跳过${NC}"
+
+# 下载通用模块
+echo -e "${CYAN}下载通用模块...${NC}"
+for module in install relay argo view service uninstall; do
+    wget -q "${BASE_URL}/common/${module}.sh" -O "common/${module}.sh" || echo -e "${YELLOW}common/${module}.sh 下载失败${NC}"
+done
+
+# 下载协议模块
+echo -e "${CYAN}下载协议模块...${NC}"
+protocols=(
+    "SOCKS" "HTTP" "AnyTLS" "TUIC" "Juicity" "Hysteria2"
+    "VLESS" "VLESS-Vision-REALITY" "Trojan" "VMess"
+    "ShadowTLS" "Shadowsocks" "TEMPLATE"
+)
+
+for proto in "${protocols[@]}"; do
+    wget -q "${BASE_URL}/protocols/${proto}.sh" -O "protocols/${proto}.sh" || echo -e "${YELLOW}protocols/${proto}.sh 下载失败${NC}"
+done
+
+# 下载文档（可选）
+echo -e "${CYAN}下载文档...${NC}"
+wget -q "${BASE_URL}/README.md" -O README.md 2>/dev/null || true
+wget -q "${BASE_URL}/QUICK_START.md" -O QUICK_START.md 2>/dev/null || true
+
+echo -e "${GREEN}文件下载完成${NC}"
 
 # 设置权限
 echo -e "${CYAN}设置权限...${NC}"

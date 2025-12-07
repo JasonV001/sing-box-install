@@ -120,9 +120,20 @@ install_beta_sing_box() {
 
 # 安装Go
 install_go() {
+    # 检查 Go 是否已安装
     if command -v go &> /dev/null; then
-        print_success "Go 已安装"
+        local go_version=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+\.[0-9]+')
+        print_success "Go 已安装 (版本: ${go_version})"
         return 0
+    fi
+    
+    # 检查是否已有 Go 但未在 PATH 中
+    if [[ -d "/usr/local/go/bin" ]]; then
+        export PATH=$PATH:/usr/local/go/bin
+        if command -v go &> /dev/null; then
+            print_success "Go 已存在，已添加到 PATH"
+            return 0
+        fi
     fi
     
     print_info "安装 Go..."
@@ -135,12 +146,22 @@ install_go() {
         *) print_error "不支持的架构"; return 1 ;;
     esac
     
-    local go_version=$(curl -sL "https://golang.org/VERSION?m=text" | grep -o 'go[0-9]\+\.[0-9]\+\.[0-9]\+')
+    local go_version=$(curl -sL "https://golang.org/VERSION?m=text" | grep -o 'go[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+    if [[ -z "$go_version" ]]; then
+        print_error "无法获取 Go 版本信息"
+        return 1
+    fi
+    
     local go_url="https://go.dev/dl/$go_version.linux-$go_arch.tar.gz"
     
+    print_info "下载 Go ${go_version}..."
     wget -qO- "$go_url" | tar -xz -C /usr/local
-    echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
-    source /etc/profile
+    
+    # 添加到 PATH
+    if ! grep -q '/usr/local/go/bin' /etc/profile; then
+        echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+    fi
+    export PATH=$PATH:/usr/local/go/bin
     
     print_success "Go 安装完成"
 }

@@ -36,8 +36,24 @@ configure_argo() {
 
 # 安装cloudflared
 install_cloudflared() {
+    # 检查是否已安装
     if command -v cloudflared &>/dev/null; then
-        print_success "cloudflared 已安装"
+        local version=$(cloudflared --version 2>&1 | head -1 || echo "unknown")
+        print_success "cloudflared 已安装 (${version})"
+        return 0
+    fi
+    
+    # 检查是否已存在但未在 PATH 中
+    if [[ -f "${ARGO_DIR}/cloudflared" ]]; then
+        chmod +x "${ARGO_DIR}/cloudflared"
+        ln -sf "${ARGO_DIR}/cloudflared" /usr/local/bin/cloudflared
+        print_success "cloudflared 已存在，已添加到 PATH"
+        return 0
+    fi
+    
+    if [[ -f "/usr/local/bin/cloudflared" ]]; then
+        chmod +x /usr/local/bin/cloudflared
+        print_success "cloudflared 已存在"
         return 0
     fi
     
@@ -66,7 +82,8 @@ install_cloudflared() {
     esac
     
     mkdir -p "${ARGO_DIR}"
-    wget -qO "${ARGO_DIR}/cloudflared" "$download_url"
+    print_info "下载 cloudflared..."
+    wget -qO "${ARGO_DIR}/cloudflared" "$download_url" || { print_error "下载失败"; return 1; }
     chmod +x "${ARGO_DIR}/cloudflared"
     ln -sf "${ARGO_DIR}/cloudflared" /usr/local/bin/cloudflared
     

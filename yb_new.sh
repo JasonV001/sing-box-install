@@ -91,21 +91,57 @@ detect_system() {
 
 # ==================== 安装依赖 ====================
 install_dependencies() {
-    print_info "检查并安装依赖..."
+    print_info "安装缺失的依赖..."
     
     if [[ -f /etc/os-release ]]; then
         . /etc/os-release
         local OS_ID=${ID,,}
     fi
     
-    if [[ "$OS_ID" =~ (debian|ubuntu) ]]; then
-        apt-get update -qq
-        apt-get install -y curl wget tar socat jq git openssl uuid-runtime build-essential
-    elif [[ "$OS_ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
-        yum install -y curl wget tar socat jq git openssl util-linux gcc-c++
+    # 获取缺失的依赖列表
+    local missing_deps=()
+    for cmd in curl wget tar socat jq git openssl; do
+        if ! command -v "$cmd" &>/dev/null; then
+            case $cmd in
+                openssl) missing_deps+=("openssl") ;;
+                *) missing_deps+=("$cmd") ;;
+            esac
+        fi
+    done
+    
+    # 检查 uuidgen
+    if ! command -v uuidgen &>/dev/null; then
+        if [[ "$OS_ID" =~ (debian|ubuntu) ]]; then
+            missing_deps+=("uuid-runtime")
+        elif [[ "$OS_ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
+            missing_deps+=("util-linux")
+        fi
     fi
     
-    print_success "依赖安装完成"
+    # 检查编译工具(仅在需要编译时)
+    if ! command -v gcc &>/dev/null; then
+        if [[ "$OS_ID" =~ (debian|ubuntu) ]]; then
+            missing_deps+=("build-essential")
+        elif [[ "$OS_ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
+            missing_deps+=("gcc-c++")
+        fi
+    fi
+    
+    # 安装缺失的依赖
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        print_info "需要安装: ${missing_deps[*]}"
+        
+        if [[ "$OS_ID" =~ (debian|ubuntu) ]]; then
+            apt-get update -qq
+            apt-get install -y "${missing_deps[@]}"
+        elif [[ "$OS_ID" =~ (centos|rhel|rocky|almalinux|fedora) ]]; then
+            yum install -y "${missing_deps[@]}"
+        fi
+        
+        print_success "依赖安装完成"
+    else
+        print_success "所有依赖已安装"
+    fi
 }
 
 # ==================== 获取服务器IP ====================
@@ -184,11 +220,35 @@ show_protocol_menu() {
     esac
 }
 
-# ==================== 主程序 ====================
-main() {
+# ==================== 检查依赖 ====================
+check_dependencies() {
+    local missing_deps=()
+    
+    # 检查必需命令
+    for cmd in curl wget jq systemctl openssl; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing_deps+=("$cmd")
+        fi
+    done
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        print_warning "缺少依赖: ${missing_deps[*]}"
+        read -p "是否自动安装? [Y/n]: " install_deps
+        if [[ "$install_deps" =~ ^[Yy]?$ ]]; then
+            install_dependencies
+        else
+            print_error "缺少必需依赖，脚本退出"
+            exit 1
+        fi
+    fi
+}
+
+# ==================== 初始化 ====================
+initialize() {
     # 检查root权限
     if [[ $EUID -ne 0 ]]; then
         print_error "此脚本必须以 root 权限运行"
+        print_info "请使用: sudo $0"
         exit 1
     fi
     
@@ -198,6 +258,20 @@ main() {
     # 检测系统
     detect_system
     
+    # 检查依赖
+    check_dependencies
+    
+    # 获取服务器IP
+    if [[ -z "$SERVER_IP" ]]; then
+        get_server_ip
+    fi
+}
+
+# ==================== 主程序 ====================
+main() {
+    # 初始化
+    initialize
+    
     # 主循环
     while true; do
         show_main_menu
@@ -205,41 +279,62 @@ main() {
         
         case $choice in
             1)
-                install_dependencies
-                get_server_ip
-                # 调用安装sing-box函数
-                source "${PROTOCOLS_DIR}/../common/install.sh"
-                install_sing_box
+                # 安装 Sing-box
+                if [[ -f "${SCRIPT_DIR}/common/install.sh" ]]; then
+                    source "${SCRIPT_DIR}/common/install.sh"
+                    install_sing_box
+                else
+                    print_error "找不到安装模块"
+                fi
                 ;;
             2)
+                # 配置节点
                 show_protocol_menu
-                read -p "请选择协议 [0-33]: " protocol_choice
-                # 根据选择加载对应的协议模块
                 ;;
             3)
                 # 查看节点信息
-                source "${PROTOCOLS_DIR}/../common/view.sh"
-                view_nodes
+                if [[ -f "${SCRIPT_DIR}/common/view.sh" ]]; then
+                    source "${SCRIPT_DIR}/common/view.sh"
+                    view_nodes
+                else
+                    print_error "找不到查看模块"
+                fi
                 ;;
             4)
                 # 配置中转
-                source "${PROTOCOLS_DIR}/../common/relay.sh"
-                configure_relay
+                if [[ -f "${SCRIPT_DIR}/common/relay.sh" ]]; then
+                    source "${SCRIPT_DIR}/common/relay.sh"
+                    configure_relay
+                else
+                    print_error "找不到中转模块"
+                fi
                 ;;
             5)
                 # 配置Argo隧道
-                source "${PROTOCOLS_DIR}/../common/argo.sh"
-                configure_argo
+                if [[ -f "${SCRIPT_DIR}/common/argo.sh" ]]; then
+                    source "${SCRIPT_DIR}/common/argo.sh"
+                    configure_argo
+                else
+                    print_error "找不到Argo模块"
+                fi
                 ;;
             6)
                 # 管理服务
-                source "${PROTOCOLS_DIR}/../common/service.sh"
-                manage_service
+                if [[ -f "${SCRIPT_DIR}/common/service.sh" ]]; then
+                    source "${SCRIPT_DIR}/common/service.sh"
+                    manage_service
+                else
+                    print_error "找不到服务管理模块"
+                fi
                 ;;
             7)
                 # 卸载
-                source "${PROTOCOLS_DIR}/../common/uninstall.sh"
-                uninstall_all
+                if [[ -f "${SCRIPT_DIR}/common/uninstall.sh" ]]; then
+                    source "${SCRIPT_DIR}/common/uninstall.sh"
+                    uninstall_all
+                else
+                    print_error "找不到卸载模块"
+                fi
                 ;;
             0)
                 print_info "退出脚本"
