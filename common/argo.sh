@@ -96,8 +96,72 @@ install_cloudflared() {
 install_argo_quick() {
     clear
     print_info "安装 Argo Quick Tunnel"
+    echo ""
     
+    # 检查是否已经安装
+    if systemctl is-active --quiet argo-quick; then
+        print_warning "检测到 Argo Quick Tunnel 已在运行"
+        echo ""
+        echo "当前配置:"
+        local current_port=$(grep "ExecStart.*--url.*localhost:" /etc/systemd/system/argo-quick.service 2>/dev/null | grep -oP 'localhost:\K[0-9]+')
+        if [[ -n "$current_port" ]]; then
+            echo "  本地端口: ${current_port}"
+        fi
+        
+        # 尝试获取当前域名
+        if [[ -f "${ARGO_DIR}/argo.log" ]]; then
+            local current_domain=$(grep -oP 'https://\K[^/]+\.trycloudflare\.com' "${ARGO_DIR}/argo.log" | tail -1)
+            if [[ -n "$current_domain" ]]; then
+                echo "  临时域名: ${current_domain}"
+            fi
+        fi
+        
+        echo ""
+        echo "请选择操作:"
+        echo "  1. 重新配置（停止并重新安装）"
+        echo "  2. 查看状态"
+        echo "  3. 刷新域名"
+        echo "  0. 返回"
+        echo ""
+        read -p "请选择 [0-3]: " action_choice
+        
+        case $action_choice in
+            1)
+                print_info "停止现有服务..."
+                systemctl stop argo-quick
+                systemctl disable argo-quick 2>/dev/null
+                ;;
+            2)
+                view_argo_status
+                return 0
+                ;;
+            3)
+                refresh_argo_domain
+                return 0
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                print_error "无效的选择"
+                sleep 2
+                return 1
+                ;;
+        esac
+    elif [[ -f /etc/systemd/system/argo-quick.service ]]; then
+        print_warning "检测到 Argo Quick Tunnel 服务文件已存在但未运行"
+        read -p "是否重新配置? [Y/n]: " reconfig
+        if [[ "$reconfig" =~ ^[Nn]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 0
+        fi
+        systemctl disable argo-quick 2>/dev/null
+    fi
+    
+    echo ""
     install_cloudflared || return 1
+    echo ""
     
     read -p "请输入本地服务端口 (默认443): " local_port
     local_port=${local_port:-443}
@@ -105,7 +169,11 @@ install_argo_quick() {
     read -p "请选择IP版本 [4/6] (默认4): " ip_version
     ip_version=${ip_version:-4}
     
+    # 清空旧日志
+    > "${ARGO_DIR}/argo.log" 2>/dev/null
+    
     # 创建systemd服务
+    print_info "创建服务配置..."
     cat > /etc/systemd/system/argo-quick.service << EOF
 [Unit]
 Description=Cloudflare Argo Quick Tunnel
@@ -124,7 +192,7 @@ WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
-    systemctl enable argo-quick
+    systemctl enable argo-quick 2>/dev/null
     systemctl start argo-quick
     
     print_success "Argo Quick Tunnel 已启动"
@@ -229,28 +297,50 @@ EOF
 # 生成 Argo 节点链接
 generate_argo_node_link() {
     local domain=$1
-    local port=$2
+    local local_port=$2
+    
+    # Argo 隧道说明:
+    # - Argo 提供 HTTPS (443端口) 访问
+    # - 自动提供 TLS 加密
+    # - 使用 WebSocket 传输
     
     # 检查本地端口对应的协议配置
     local config_file="${CONFIG_DIR}/config.json"
     
     if [[ ! -f "$config_file" ]]; then
-        print_warning "配置文件不存在，生成通用 HTTPS 链接"
-        echo "https://${domain}" > "${LINK_DIR}/argo_node_${port}.txt"
+        print_warning "配置文件不存在，生成通用 VLESS+WS+TLS 节点链接"
+        local new_uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
+        
+        # Argo 隧道使用 443 端口，自带 TLS
+        local link="vless://${new_uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-Port${local_port}"
+        echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
+        
+        print_success "已生成 VLESS+WS+TLS 节点链接"
+        print_info "注意: 请在 Sing-box 中配置端口 ${local_port} 的 VLESS 服务"
+        print_info "UUID: ${new_uuid}"
+        echo ""
+        echo -e "${GREEN}节点链接:${NC}"
+        echo "$link"
         return 0
     fi
     
     # 查找对应端口的inbound配置
-    local inbound=$(jq -r ".inbounds[] | select(.listen_port == $port)" "$config_file" 2>/dev/null)
+    local inbound=$(jq -r ".inbounds[] | select(.listen_port == $local_port)" "$config_file" 2>/dev/null)
     
     if [[ -z "$inbound" ]]; then
-        print_warning "未找到端口 $port 的配置，生成通用 VLESS 节点链接"
-        # 生成一个新的 UUID
-        local new_uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$(shuf -i 1000-9999 -n 1)")
-        local link="vless://${new_uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-Port${port}"
-        echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
-        print_success "已生成通用 VLESS 节点链接"
-        print_info "注意: 请在 Sing-box 中配置端口 ${port} 的 VLESS 服务，UUID: ${new_uuid}"
+        print_warning "未找到端口 $local_port 的配置，生成通用 VLESS+WS+TLS 节点链接"
+        local new_uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
+        
+        # Argo 隧道使用 443 端口，自带 TLS
+        local link="vless://${new_uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-Port${local_port}"
+        echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
+        
+        print_success "已生成 VLESS+WS+TLS 节点链接"
+        print_info "注意: 请在 Sing-box 中配置端口 ${local_port} 的 VLESS 服务"
+        print_info "UUID: ${new_uuid}"
+        echo ""
+        echo -e "${GREEN}节点链接:${NC}"
+        echo "$link"
         return 0
     fi
     
@@ -258,13 +348,16 @@ generate_argo_node_link() {
     local tag=$(echo "$inbound" | jq -r '.tag')
     
     # 根据协议生成链接
+    # Argo 隧道: 域名:443 + TLS + WebSocket
     case $protocol in
         vless)
             local uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
             if [[ -n "$uuid" ]]; then
+                # VLESS + WebSocket + TLS (Argo 提供)
                 local link="vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
-                echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
-                print_success "已生成 VLESS 节点链接"
+                echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
+                
+                print_success "已生成 VLESS+WS+TLS 节点链接"
                 echo ""
                 echo -e "${GREEN}节点链接:${NC}"
                 echo "$link"
@@ -273,9 +366,11 @@ generate_argo_node_link() {
         trojan)
             local password=$(echo "$inbound" | jq -r '.users[0].password // empty')
             if [[ -n "$password" ]]; then
+                # Trojan + WebSocket + TLS (Argo 提供)
                 local link="trojan://${password}@${domain}:443?security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
-                echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
-                print_success "已生成 Trojan 节点链接"
+                echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
+                
+                print_success "已生成 Trojan+WS+TLS 节点链接"
                 echo ""
                 echo -e "${GREEN}节点链接:${NC}"
                 echo "$link"
@@ -284,6 +379,7 @@ generate_argo_node_link() {
         vmess)
             local uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
             if [[ -n "$uuid" ]]; then
+                # VMess + WebSocket + TLS (Argo 提供)
                 local vmess_json=$(cat <<EOF
 {
   "v": "2",
@@ -302,16 +398,18 @@ generate_argo_node_link() {
 EOF
 )
                 local link="vmess://$(echo -n "$vmess_json" | base64 -w 0)"
-                echo "$link" > "${LINK_DIR}/argo_node_${port}.txt"
-                print_success "已生成 VMess 节点链接"
+                echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
+                
+                print_success "已生成 VMess+WS+TLS 节点链接"
                 echo ""
                 echo -e "${GREEN}节点链接:${NC}"
                 echo "$link"
             fi
             ;;
         *)
-            print_warning "协议 $protocol 暂不支持生成 Argo 节点链接，生成通用链接"
-            echo "https://${domain}" > "${LINK_DIR}/argo_node_${port}.txt"
+            print_warning "协议 $protocol 暂不支持 Argo 隧道"
+            print_info "Argo 隧道支持: VLESS, VMess, Trojan (需配合 WebSocket)"
+            echo "https://${domain}" > "${LINK_DIR}/argo_node_${local_port}.txt"
             ;;
     esac
 }
@@ -320,7 +418,32 @@ EOF
 install_argo_token() {
     clear
     print_info "安装 Argo Tunnel (Token 认证)"
+    echo ""
     
+    # 检查是否已经安装
+    if systemctl is-active --quiet argo-tunnel; then
+        print_warning "检测到 Argo Tunnel 已在运行"
+        echo ""
+        read -p "是否重新配置? [y/N]: " reconfig
+        if [[ ! "$reconfig" =~ ^[Yy]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 0
+        fi
+        systemctl stop argo-tunnel
+        systemctl disable argo-tunnel 2>/dev/null
+    elif [[ -f /etc/systemd/system/argo-tunnel.service ]]; then
+        print_warning "检测到 Argo Tunnel 服务文件已存在但未运行"
+        read -p "是否重新配置? [Y/n]: " reconfig
+        if [[ "$reconfig" =~ ^[Nn]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 0
+        fi
+        systemctl disable argo-tunnel 2>/dev/null
+    fi
+    
+    echo ""
     install_cloudflared || return 1
     
     echo ""
@@ -339,6 +462,7 @@ install_argo_token() {
     local_port=${local_port:-443}
     
     # 创建systemd服务
+    print_info "创建服务配置..."
     cat > /etc/systemd/system/argo-tunnel.service << EOF
 [Unit]
 Description=Cloudflare Argo Tunnel
@@ -355,7 +479,7 @@ WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
-    systemctl enable argo-tunnel
+    systemctl enable argo-tunnel 2>/dev/null
     systemctl start argo-tunnel
     
     # 保存token和域名
@@ -399,7 +523,32 @@ EOF
 install_argo_json() {
     clear
     print_info "安装 Argo Tunnel (JSON 认证)"
+    echo ""
     
+    # 检查是否已经安装
+    if systemctl is-active --quiet argo-tunnel; then
+        print_warning "检测到 Argo Tunnel 已在运行"
+        echo ""
+        read -p "是否重新配置? [y/N]: " reconfig
+        if [[ ! "$reconfig" =~ ^[Yy]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 0
+        fi
+        systemctl stop argo-tunnel
+        systemctl disable argo-tunnel 2>/dev/null
+    elif [[ -f /etc/systemd/system/argo-tunnel.service ]]; then
+        print_warning "检测到 Argo Tunnel 服务文件已存在但未运行"
+        read -p "是否重新配置? [Y/n]: " reconfig
+        if [[ "$reconfig" =~ ^[Nn]$ ]]; then
+            print_info "取消安装"
+            sleep 2
+            return 0
+        fi
+        systemctl disable argo-tunnel 2>/dev/null
+    fi
+    
+    echo ""
     install_cloudflared || return 1
     
     echo ""
@@ -458,7 +607,7 @@ WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
-    systemctl enable argo-tunnel
+    systemctl enable argo-tunnel 2>/dev/null
     systemctl start argo-tunnel
     
     # 生成节点链接
