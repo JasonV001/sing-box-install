@@ -16,15 +16,15 @@ manage_service() {
     fi
     
     echo ""
-    echo "  ${GREEN}1.${NC}  启动服务"
-    echo "  ${GREEN}2.${NC}  停止服务"
-    echo "  ${GREEN}3.${NC}  重启服务"
-    echo "  ${GREEN}4.${NC}  查看状态"
-    echo "  ${GREEN}5.${NC}  查看日志"
-    echo "  ${GREEN}6.${NC}  启用开机自启"
-    echo "  ${GREEN}7.${NC}  禁用开机自启"
-    echo "  ${GREEN}8.${NC}  重载配置"
-    echo "  ${GREEN}0.${NC}  返回主菜单"
+    echo -e "  ${GREEN}1.${NC}  启动服务"
+    echo -e "  ${GREEN}2.${NC}  停止服务"
+    echo -e "  ${GREEN}3.${NC}  重启服务"
+    echo -e "  ${GREEN}4.${NC}  查看状态"
+    echo -e "  ${GREEN}5.${NC}  查看日志"
+    echo -e "  ${GREEN}6.${NC}  启用开机自启"
+    echo -e "  ${GREEN}7.${NC}  禁用开机自启"
+    echo -e "  ${GREEN}8.${NC}  重载配置"
+    echo -e "  ${GREEN}0.${NC}  返回主菜单"
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
     
@@ -138,11 +138,11 @@ view_logs() {
     clear
     echo -e "${CYAN}═══════════════════ 日志查看 ═══════════════════${NC}"
     echo ""
-    echo "  ${GREEN}1.${NC}  查看实时日志"
-    echo "  ${GREEN}2.${NC}  查看最近100行"
-    echo "  ${GREEN}3.${NC}  查看最近500行"
-    echo "  ${GREEN}4.${NC}  查看错误日志"
-    echo "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${GREEN}1.${NC}  查看实时日志"
+    echo -e "  ${GREEN}2.${NC}  查看最近100行"
+    echo -e "  ${GREEN}3.${NC}  查看最近500行"
+    echo -e "  ${GREEN}4.${NC}  查看错误日志"
+    echo -e "  ${GREEN}0.${NC}  返回"
     echo ""
     
     read -p "请选择 [0-4]: " log_choice

@@ -103,11 +103,11 @@ uninstall_partial() {
     clear
     echo -e "${CYAN}═══════════════════ 部分卸载 ═══════════════════${NC}"
     echo ""
-    echo "  ${GREEN}1.${NC}  仅卸载 Sing-box (保留配置)"
-    echo "  ${GREEN}2.${NC}  仅卸载 Argo 隧道"
-    echo "  ${GREEN}3.${NC}  仅清理中转规则"
-    echo "  ${GREEN}4.${NC}  清理所有节点配置"
-    echo "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${GREEN}1.${NC}  仅卸载 Sing-box (保留配置)"
+    echo -e "  ${GREEN}2.${NC}  仅卸载 Argo 隧道"
+    echo -e "  ${GREEN}3.${NC}  仅清理中转规则"
+    echo -e "  ${GREEN}4.${NC}  清理所有节点配置"
+    echo -e "  ${GREEN}0.${NC}  返回"
     echo ""
     
     read -p "请选择 [0-4]: " choice

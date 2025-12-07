@@ -15,14 +15,14 @@ configure_vless() {
     clear
     echo -e "${CYAN}═══════════════════ VLESS 协议配置 ═══════════════════${NC}"
     echo ""
-    echo "  ${GREEN}1.${NC}  VLESS+TCP"
-    echo "  ${GREEN}2.${NC}  VLESS+WebSocket"
-    echo "  ${GREEN}3.${NC}  VLESS+gRPC"
-    echo "  ${GREEN}4.${NC}  VLESS+HTTPUpgrade"
-    echo "  ${GREEN}5.${NC}  VLESS+Vision+REALITY"
-    echo "  ${GREEN}6.${NC}  VLESS+H2C+REALITY"
-    echo "  ${GREEN}7.${NC}  VLESS+gRPC+REALITY"
-    echo "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${GREEN}1.${NC}  VLESS+TCP"
+    echo -e "  ${GREEN}2.${NC}  VLESS+WebSocket"
+    echo -e "  ${GREEN}3.${NC}  VLESS+gRPC"
+    echo -e "  ${GREEN}4.${NC}  VLESS+HTTPUpgrade"
+    echo -e "  ${GREEN}5.${NC}  VLESS+Vision+REALITY"
+    echo -e "  ${GREEN}6.${NC}  VLESS+H2C+REALITY"
+    echo -e "  ${GREEN}7.${NC}  VLESS+gRPC+REALITY"
+    echo -e "  ${GREEN}0.${NC}  返回"
     echo ""
     
     read -p "请选择 VLESS 变体 [0-7]: " vless_type

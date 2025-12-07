@@ -6,13 +6,13 @@ configure_vmess() {
     clear
     echo -e "${CYAN}═══════════════════ VMess 协议配置 ═══════════════════${NC}"
     echo ""
-    echo "  ${GREEN}1.${NC}  VMess+TCP"
-    echo "  ${GREEN}2.${NC}  VMess+WebSocket"
-    echo "  ${GREEN}3.${NC}  VMess+gRPC"
-    echo "  ${GREEN}4.${NC}  VMess+TCP+TLS"
-    echo "  ${GREEN}5.${NC}  VMess+WebSocket+TLS"
-    echo "  ${GREEN}6.${NC}  VMess+gRPC+TLS"
-    echo "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${GREEN}1.${NC}  VMess+TCP"
+    echo -e "  ${GREEN}2.${NC}  VMess+WebSocket"
+    echo -e "  ${GREEN}3.${NC}  VMess+gRPC"
+    echo -e "  ${GREEN}4.${NC}  VMess+TCP+TLS"
+    echo -e "  ${GREEN}5.${NC}  VMess+WebSocket+TLS"
+    echo -e "  ${GREEN}6.${NC}  VMess+gRPC+TLS"
+    echo -e "  ${GREEN}0.${NC}  返回"
     echo ""
     
     read -p "请选择 VMess 变体 [0-6]: " vmess_type

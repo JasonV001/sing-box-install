@@ -7,14 +7,14 @@ configure_trojan() {
     clear
     echo -e "${CYAN}═══════════════════ Trojan 协议配置 ═══════════════════${NC}"
     echo ""
-    echo "  ${GREEN}1.${NC}  Trojan+TCP"
-    echo "  ${GREEN}2.${NC}  Trojan+WebSocket"
-    echo "  ${GREEN}3.${NC}  Trojan+gRPC"
-    echo "  ${GREEN}4.${NC}  Trojan+HTTPUpgrade"
-    echo "  ${GREEN}5.${NC}  Trojan+TCP+TLS"
-    echo "  ${GREEN}6.${NC}  Trojan+WebSocket+TLS"
-    echo "  ${GREEN}7.${NC}  Trojan+gRPC+TLS"
-    echo "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${GREEN}1.${NC}  Trojan+TCP"
+    echo -e "  ${GREEN}2.${NC}  Trojan+WebSocket"
+    echo -e "  ${GREEN}3.${NC}  Trojan+gRPC"
+    echo -e "  ${GREEN}4.${NC}  Trojan+HTTPUpgrade"
+    echo -e "  ${GREEN}5.${NC}  Trojan+TCP+TLS"
+    echo -e "  ${GREEN}6.${NC}  Trojan+WebSocket+TLS"
+    echo -e "  ${GREEN}7.${NC}  Trojan+gRPC+TLS"
+    echo -e "  ${GREEN}0.${NC}  返回"
     echo ""
     
     read -p "请选择 Trojan 变体 [0-7]: " trojan_type

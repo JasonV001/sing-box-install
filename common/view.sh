@@ -48,11 +48,11 @@ view_nodes() {
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
     echo ""
-    echo "  ${GREEN}1.${NC}  查看详细配置"
-    echo "  ${GREEN}2.${NC}  查看分享链接"
-    echo "  ${GREEN}3.${NC}  导出所有链接"
-    echo "  ${GREEN}4.${NC}  生成订阅链接"
-    echo "  ${GREEN}0.${NC}  返回主菜单"
+    echo -e "  ${GREEN}1.${NC}  查看详细配置"
+    echo -e "  ${GREEN}2.${NC}  查看分享链接"
+    echo -e "  ${GREEN}3.${NC}  导出所有链接"
+    echo -e "  ${GREEN}4.${NC}  生成订阅链接"
+    echo -e "  ${GREEN}0.${NC}  返回主菜单"
     echo ""
     
     read -p "请选择操作 [0-4]: " choice

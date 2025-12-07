@@ -10,11 +10,11 @@ configure_relay() {
     clear
     echo -e "${CYAN}═══════════════════ 中转配置 ═══════════════════${NC}"
     echo ""
-    echo "  ${GREEN}1.${NC}  添加中转规则"
-    echo "  ${GREEN}2.${NC}  查看中转规则"
-    echo "  ${GREEN}3.${NC}  删除中转规则"
-    echo "  ${GREEN}4.${NC}  启用/禁用中转"
-    echo "  ${GREEN}0.${NC}  返回主菜单"
+    echo -e "  ${GREEN}1.${NC}  添加中转规则"
+    echo -e "  ${GREEN}2.${NC}  查看中转规则"
+    echo -e "  ${GREEN}3.${NC}  删除中转规则"
+    echo -e "  ${GREEN}4.${NC}  启用/禁用中转"
+    echo -e "  ${GREEN}0.${NC}  返回主菜单"
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
     
