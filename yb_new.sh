@@ -393,15 +393,30 @@ apply_certificate_auto() {
     print_info "申请证书: ${domain}"
     echo ""
     
+    # 安装 crontab（如果不存在）
+    if ! command -v crontab &>/dev/null; then
+        print_info "安装 crontab..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y cron
+        elif command -v yum &>/dev/null; then
+            yum install -y cronie
+        fi
+        systemctl enable cron 2>/dev/null || systemctl enable crond 2>/dev/null
+        systemctl start cron 2>/dev/null || systemctl start crond 2>/dev/null
+    fi
+    
     # 安装 acme.sh
     if ! command -v acme.sh &>/dev/null && [[ ! -f ~/.acme.sh/acme.sh ]]; then
         print_info "安装 acme.sh..."
-        curl -s https://get.acme.sh | sh -s email=admin@${domain}
+        curl -s https://get.acme.sh | sh -s email=admin@${domain} --force
+        
+        # 重新加载环境变量
+        source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null
     fi
     
-    # 设置 acme.sh 别名
+    # 设置 acme.sh 路径
     if [[ -f ~/.acme.sh/acme.sh ]]; then
-        alias acme.sh=~/.acme.sh/acme.sh
+        ACME_SH=~/.acme.sh/acme.sh
     else
         print_error "acme.sh 安装失败"
         return 1
@@ -409,10 +424,12 @@ apply_certificate_auto() {
     
     # 停止可能占用 80 端口的服务
     print_info "检查端口占用..."
+    local need_restart=false
     if ss -tuln | grep -q ":80 "; then
         print_warning "端口 80 被占用，尝试临时停止 sing-box..."
-        systemctl stop sing-box
-        local need_restart=true
+        systemctl stop sing-box 2>/dev/null
+        need_restart=true
+        sleep 2
     fi
     
     # 尝试从多个 CA 申请证书
@@ -420,14 +437,14 @@ apply_certificate_auto() {
     for ca_server in "${ca_servers[@]}"; do
         print_info "从 ${ca_server} 申请证书..."
         
-        ~/.acme.sh/acme.sh --set-default-ca --server "$ca_server"
+        $ACME_SH --set-default-ca --server "$ca_server"
         
-        if ~/.acme.sh/acme.sh --issue -d "$domain" --standalone -k ec-256 --force; then
+        if $ACME_SH --issue -d "$domain" --standalone -k ec-256 --force; then
             print_success "证书申请成功"
             
             # 安装证书
             print_info "安装证书..."
-            ~/.acme.sh/acme.sh --install-cert -d "$domain" --ecc \
+            $ACME_SH --install-cert -d "$domain" --ecc \
                 --key-file "$private_key_path" \
                 --fullchain-file "$certificate_path"
             
@@ -484,14 +501,30 @@ apply_certificate_cf() {
     print_info "使用 CloudFlare API 申请证书: ${domain}"
     echo ""
     
+    # 安装 crontab（如果不存在）
+    if ! command -v crontab &>/dev/null; then
+        print_info "安装 crontab..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y cron
+        elif command -v yum &>/dev/null; then
+            yum install -y cronie
+        fi
+        systemctl enable cron 2>/dev/null || systemctl enable crond 2>/dev/null
+        systemctl start cron 2>/dev/null || systemctl start crond 2>/dev/null
+    fi
+    
     # 安装 acme.sh
     if ! command -v acme.sh &>/dev/null && [[ ! -f ~/.acme.sh/acme.sh ]]; then
         print_info "安装 acme.sh..."
-        curl -s https://get.acme.sh | sh -s email=admin@${domain}
+        curl -s https://get.acme.sh | sh -s email=admin@${domain} --force
+        
+        # 重新加载环境变量
+        source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null
     fi
     
+    # 设置 acme.sh 路径
     if [[ -f ~/.acme.sh/acme.sh ]]; then
-        alias acme.sh=~/.acme.sh/acme.sh
+        ACME_SH=~/.acme.sh/acme.sh
     else
         print_error "acme.sh 安装失败"
         return 1
@@ -502,14 +535,14 @@ apply_certificate_cf() {
     for ca_server in "${ca_servers[@]}"; do
         print_info "从 ${ca_server} 申请证书..."
         
-        ~/.acme.sh/acme.sh --set-default-ca --server "$ca_server"
+        $ACME_SH --set-default-ca --server "$ca_server"
         
-        if ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$domain" -k ec-256; then
+        if $ACME_SH --issue --dns dns_cf -d "$domain" -k ec-256; then
             print_success "证书申请成功"
             
             # 安装证书
             print_info "安装证书..."
-            ~/.acme.sh/acme.sh --install-cert -d "$domain" --ecc \
+            $ACME_SH --install-cert -d "$domain" --ecc \
                 --key-file "$private_key_path" \
                 --fullchain-file "$certificate_path"
             
@@ -577,10 +610,12 @@ renew_certificate() {
         return 1
     fi
     
+    local ACME_SH=~/.acme.sh/acme.sh
+    
     print_info "续期所有证书..."
     echo ""
     
-    ~/.acme.sh/acme.sh --renew-all --force
+    $ACME_SH --renew-all --force
     
     if [[ $? -eq 0 ]]; then
         print_success "证书续期成功"
