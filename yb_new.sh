@@ -337,61 +337,262 @@ update_certificate() {
     echo -e "${CYAN}═══════════════════ 更新证书 ═══════════════════${NC}"
     echo ""
     
-    # 调用 yb.sh 的证书申请功能
-    if [[ -f "${SCRIPT_DIR}/yb.sh" ]]; then
-        print_info "调用 yb.sh 证书申请功能..."
-        echo ""
-        
-        # 加载 yb.sh 的函数
-        source "${SCRIPT_DIR}/yb.sh"
-        
-        # 显示证书申请选项
-        echo "请选择证书申请方式："
-        echo "  1. 自动申请证书（需要域名）"
-        echo "  2. 使用 CloudFlare API 申请"
-        echo "  3. 手动指定证书路径"
-        echo "  0. 返回"
-        echo ""
-        read -p "请选择 [0-3]: " cert_choice
-        
-        case $cert_choice in
-            1)
-                read -p "请输入域名: " domain
-                if [[ -n "$domain" ]]; then
-                    apply_certificate
-                else
-                    print_error "域名不能为空"
-                fi
-                ;;
-            2)
-                read -p "请输入域名: " domain
-                read -p "请输入 CloudFlare Zone ID: " zone_id
-                read -p "请输入 CloudFlare API Token: " CF_Token
-                export CF_Token
-                if [[ -n "$domain" && -n "$zone_id" && -n "$CF_Token" ]]; then
-                    Apply_api_certificate
-                else
-                    print_error "参数不完整"
-                fi
-                ;;
-            3)
-                set_certificate_path
-                set_private_key_path
-                print_success "证书路径已设置"
-                ;;
-            0)
-                return
-                ;;
-            *)
-                print_error "无效的选择"
-                ;;
-        esac
-    else
-        print_error "找不到 yb.sh 文件"
-    fi
+    echo "请选择证书申请方式："
+    echo "  1. 自动申请证书（使用 acme.sh）"
+    echo "  2. 使用 CloudFlare API 申请"
+    echo "  3. 手动指定证书路径"
+    echo "  4. 续期现有证书"
+    echo "  0. 返回"
+    echo ""
+    read -p "请选择 [0-4]: " cert_choice
+    
+    case $cert_choice in
+        1)
+            apply_certificate_auto
+            ;;
+        2)
+            apply_certificate_cf
+            ;;
+        3)
+            set_certificate_manual
+            ;;
+        4)
+            renew_certificate
+            ;;
+        0)
+            return
+            ;;
+        *)
+            print_error "无效的选择"
+            sleep 2
+            update_certificate
+            ;;
+    esac
     
     echo ""
     read -p "按回车键继续..."
+}
+
+# 自动申请证书
+apply_certificate_auto() {
+    clear
+    echo -e "${CYAN}═══════════════════ 自动申请证书 ═══════════════════${NC}"
+    echo ""
+    
+    read -p "请输入域名: " domain
+    
+    if [[ -z "$domain" ]]; then
+        print_error "域名不能为空"
+        return 1
+    fi
+    
+    local certificate_path="/etc/ssl/private/${domain}.crt"
+    local private_key_path="/etc/ssl/private/${domain}.key"
+    local ca_servers=("letsencrypt" "zerossl")
+    
+    print_info "申请证书: ${domain}"
+    echo ""
+    
+    # 安装 acme.sh
+    if ! command -v acme.sh &>/dev/null && [[ ! -f ~/.acme.sh/acme.sh ]]; then
+        print_info "安装 acme.sh..."
+        curl -s https://get.acme.sh | sh -s email=admin@${domain}
+    fi
+    
+    # 设置 acme.sh 别名
+    if [[ -f ~/.acme.sh/acme.sh ]]; then
+        alias acme.sh=~/.acme.sh/acme.sh
+    else
+        print_error "acme.sh 安装失败"
+        return 1
+    fi
+    
+    # 停止可能占用 80 端口的服务
+    print_info "检查端口占用..."
+    if ss -tuln | grep -q ":80 "; then
+        print_warning "端口 80 被占用，尝试临时停止 sing-box..."
+        systemctl stop sing-box
+        local need_restart=true
+    fi
+    
+    # 尝试从多个 CA 申请证书
+    local success=false
+    for ca_server in "${ca_servers[@]}"; do
+        print_info "从 ${ca_server} 申请证书..."
+        
+        ~/.acme.sh/acme.sh --set-default-ca --server "$ca_server"
+        
+        if ~/.acme.sh/acme.sh --issue -d "$domain" --standalone -k ec-256 --force; then
+            print_success "证书申请成功"
+            
+            # 安装证书
+            print_info "安装证书..."
+            ~/.acme.sh/acme.sh --install-cert -d "$domain" --ecc \
+                --key-file "$private_key_path" \
+                --fullchain-file "$certificate_path"
+            
+            print_success "证书已安装"
+            echo "  证书路径: ${certificate_path}"
+            echo "  私钥路径: ${private_key_path}"
+            
+            success=true
+            break
+        else
+            print_warning "从 ${ca_server} 申请失败，尝试下一个..."
+        fi
+    done
+    
+    # 恢复服务
+    if [[ "$need_restart" == "true" ]]; then
+        print_info "重启 sing-box 服务..."
+        systemctl start sing-box
+    fi
+    
+    if [[ "$success" == "false" ]]; then
+        print_error "证书申请失败"
+        echo ""
+        print_info "可能的原因:"
+        echo "  1. 域名未正确解析到本服务器"
+        echo "  2. 防火墙阻止了 80 端口"
+        echo "  3. 端口 80 被其他服务占用"
+        echo ""
+        print_info "请检查后重试，或使用其他方式申请证书"
+        return 1
+    fi
+}
+
+# 使用 CloudFlare API 申请证书
+apply_certificate_cf() {
+    clear
+    echo -e "${CYAN}═══════════════════ CloudFlare API 申请 ═══════════════════${NC}"
+    echo ""
+    
+    read -p "请输入域名: " domain
+    read -p "请输入 CloudFlare API Token: " CF_Token
+    
+    if [[ -z "$domain" || -z "$CF_Token" ]]; then
+        print_error "域名和 API Token 不能为空"
+        return 1
+    fi
+    
+    export CF_Token
+    
+    local certificate_path="/etc/ssl/private/${domain}.crt"
+    local private_key_path="/etc/ssl/private/${domain}.key"
+    local ca_servers=("letsencrypt" "zerossl")
+    
+    print_info "使用 CloudFlare API 申请证书: ${domain}"
+    echo ""
+    
+    # 安装 acme.sh
+    if ! command -v acme.sh &>/dev/null && [[ ! -f ~/.acme.sh/acme.sh ]]; then
+        print_info "安装 acme.sh..."
+        curl -s https://get.acme.sh | sh -s email=admin@${domain}
+    fi
+    
+    if [[ -f ~/.acme.sh/acme.sh ]]; then
+        alias acme.sh=~/.acme.sh/acme.sh
+    else
+        print_error "acme.sh 安装失败"
+        return 1
+    fi
+    
+    # 尝试从多个 CA 申请证书
+    local success=false
+    for ca_server in "${ca_servers[@]}"; do
+        print_info "从 ${ca_server} 申请证书..."
+        
+        ~/.acme.sh/acme.sh --set-default-ca --server "$ca_server"
+        
+        if ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$domain" -k ec-256; then
+            print_success "证书申请成功"
+            
+            # 安装证书
+            print_info "安装证书..."
+            ~/.acme.sh/acme.sh --install-cert -d "$domain" --ecc \
+                --key-file "$private_key_path" \
+                --fullchain-file "$certificate_path"
+            
+            print_success "证书已安装"
+            echo "  证书路径: ${certificate_path}"
+            echo "  私钥路径: ${private_key_path}"
+            
+            success=true
+            break
+        else
+            print_warning "从 ${ca_server} 申请失败，尝试下一个..."
+        fi
+    done
+    
+    if [[ "$success" == "false" ]]; then
+        print_error "证书申请失败"
+        echo ""
+        print_info "请检查 CloudFlare API Token 是否正确"
+        return 1
+    fi
+}
+
+# 手动指定证书路径
+set_certificate_manual() {
+    clear
+    echo -e "${CYAN}═══════════════════ 手动指定证书 ═══════════════════${NC}"
+    echo ""
+    
+    read -p "请输入证书文件路径 (.crt 或 .pem): " cert_path
+    read -p "请输入私钥文件路径 (.key): " key_path
+    
+    if [[ ! -f "$cert_path" ]]; then
+        print_error "证书文件不存在: ${cert_path}"
+        return 1
+    fi
+    
+    if [[ ! -f "$key_path" ]]; then
+        print_error "私钥文件不存在: ${key_path}"
+        return 1
+    fi
+    
+    # 复制到标准位置
+    local domain=$(basename "$cert_path" | sed 's/\.[^.]*$//')
+    local target_cert="/etc/ssl/private/${domain}.crt"
+    local target_key="/etc/ssl/private/${domain}.key"
+    
+    cp "$cert_path" "$target_cert"
+    cp "$key_path" "$target_key"
+    
+    chmod 600 "$target_cert" "$target_key"
+    
+    print_success "证书已复制到标准位置"
+    echo "  证书路径: ${target_cert}"
+    echo "  私钥路径: ${target_key}"
+}
+
+# 续期证书
+renew_certificate() {
+    clear
+    echo -e "${CYAN}═══════════════════ 续期证书 ═══════════════════${NC}"
+    echo ""
+    
+    if [[ ! -f ~/.acme.sh/acme.sh ]]; then
+        print_error "未找到 acme.sh，请先申请证书"
+        return 1
+    fi
+    
+    print_info "续期所有证书..."
+    echo ""
+    
+    ~/.acme.sh/acme.sh --renew-all --force
+    
+    if [[ $? -eq 0 ]]; then
+        print_success "证书续期成功"
+        
+        # 重启服务以加载新证书
+        print_info "重启 sing-box 服务..."
+        systemctl restart sing-box
+        
+        print_success "服务已重启"
+    else
+        print_error "证书续期失败"
+    fi
 }
 
 # ==================== 节点管理 ====================
