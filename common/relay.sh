@@ -806,7 +806,14 @@ add_gost_relay() {
     echo ""
     
     # 检查gost是否安装
-    if ! command -v gost &>/dev/null; then
+    # 先检查 /usr/local/bin/gost
+    if [[ -x "/usr/local/bin/gost" ]]; then
+        local gost_version=$(/usr/local/bin/gost -V 2>&1 | head -n1)
+        print_success "Gost 已安装: ${gost_version}"
+    elif command -v gost &>/dev/null; then
+        local gost_version=$(gost -V 2>&1 | head -n1)
+        print_success "Gost 已安装: ${gost_version}"
+    else
         print_warning "检测到 Gost 未安装"
         read -p "是否现在安装 Gost? [Y/n]: " install_gost_confirm
         if [[ "$install_gost_confirm" =~ ^[Nn]$ ]]; then
@@ -823,9 +830,6 @@ add_gost_relay() {
             return 1
         fi
         print_success "Gost 安装完成"
-    else
-        local gost_version=$(gost -V 2>&1 | head -n1)
-        print_success "Gost 已安装: ${gost_version}"
     fi
     echo ""
     
@@ -1033,8 +1037,19 @@ install_gost() {
             ;;
     esac
     
-    # 使用固定版本，避免 API 限制
-    local version="v2.11.5"
+    # 获取最新版本
+    print_info "检查最新版本..."
+    local latest_version=$(curl -s --connect-timeout 10 https://api.github.com/repos/ginuerzh/gost/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")' 2>/dev/null)
+    
+    # 如果获取失败，使用备用版本
+    if [[ -z "$latest_version" ]]; then
+        print_warning "无法获取最新版本，使用备用版本"
+        latest_version="v2.11.5"
+    else
+        print_success "最新版本: $latest_version"
+    fi
+    
+    local version="$latest_version"
     
     # 定义多个下载源
     local download_urls=(
