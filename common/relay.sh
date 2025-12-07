@@ -8,15 +8,19 @@ RELAY_CONFIG="${RELAY_DIR}/relay.json"
 # 配置中转
 configure_relay() {
     clear
-    echo -e "${CYAN}═══════════════════ 中转配置 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                      中转配置                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC}  添加中转规则"
-    echo -e "  ${GREEN}2.${NC}  查看中转规则"
-    echo -e "  ${GREEN}3.${NC}  删除中转规则"
-    echo -e "  ${GREEN}4.${NC}  启用/禁用中转"
-    echo -e "  ${GREEN}0.${NC}  返回主菜单"
+    echo -e "  ${PURPLE}【中转管理】${NC}"
+    echo -e "    ${GREEN}1.${NC}  添加中转规则      ${YELLOW}(iptables/DNAT/Socat/Gost)${NC}"
+    echo -e "    ${GREEN}2.${NC}  查看中转规则      ${YELLOW}(列表显示)${NC}"
+    echo -e "    ${GREEN}3.${NC}  删除中转规则      ${YELLOW}(单个删除)${NC}"
+    echo -e "    ${GREEN}4.${NC}  启用/禁用中转     ${YELLOW}(切换状态)${NC}"
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo -e "    ${GREEN}0.${NC}  返回主菜单"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择操作 [0-4]: " choice
     

@@ -4,16 +4,23 @@
 
 configure_vmess() {
     clear
-    echo -e "${CYAN}═══════════════════ VMess 协议配置 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    VMess 协议配置                         ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC}  VMess+TCP"
-    echo -e "  ${GREEN}2.${NC}  VMess+WebSocket"
-    echo -e "  ${GREEN}3.${NC}  VMess+gRPC"
-    echo -e "  ${GREEN}4.${NC}  VMess+TCP+TLS"
-    echo -e "  ${GREEN}5.${NC}  VMess+WebSocket+TLS"
-    echo -e "  ${GREEN}6.${NC}  VMess+gRPC+TLS"
-    echo -e "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${PURPLE}【基础传输】${NC}"
+    echo -e "    ${GREEN}1.${NC}  VMess+TCP          ${YELLOW}(直连)${NC}"
+    echo -e "    ${GREEN}2.${NC}  VMess+WebSocket    ${YELLOW}(WS - 推荐)${NC}"
+    echo -e "    ${GREEN}3.${NC}  VMess+gRPC         ${YELLOW}(HTTP/2)${NC}"
     echo ""
+    echo -e "  ${PURPLE}【TLS 加密】${NC}"
+    echo -e "    ${GREEN}4.${NC}  VMess+TCP+TLS      ${YELLOW}(TLS 直连)${NC}"
+    echo -e "    ${GREEN}5.${NC}  VMess+WebSocket+TLS ${YELLOW}(TLS+WS - 推荐)${NC}"
+    echo -e "    ${GREEN}6.${NC}  VMess+gRPC+TLS     ${YELLOW}(TLS+gRPC)${NC}"
+    echo ""
+    echo -e "    ${GREEN}0.${NC}  返回"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择 VMess 变体 [0-6]: " vmess_type
     

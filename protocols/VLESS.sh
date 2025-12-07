@@ -13,17 +13,24 @@
 # 主配置函数
 configure_vless() {
     clear
-    echo -e "${CYAN}═══════════════════ VLESS 协议配置 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    VLESS 协议配置                         ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC}  VLESS+TCP"
-    echo -e "  ${GREEN}2.${NC}  VLESS+WebSocket"
-    echo -e "  ${GREEN}3.${NC}  VLESS+gRPC"
-    echo -e "  ${GREEN}4.${NC}  VLESS+HTTPUpgrade"
-    echo -e "  ${GREEN}5.${NC}  VLESS+Vision+REALITY"
-    echo -e "  ${GREEN}6.${NC}  VLESS+H2C+REALITY"
-    echo -e "  ${GREEN}7.${NC}  VLESS+gRPC+REALITY"
-    echo -e "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${PURPLE}【基础传输】${NC}"
+    echo -e "    ${GREEN}1.${NC}  VLESS+TCP          ${YELLOW}(直连)${NC}"
+    echo -e "    ${GREEN}2.${NC}  VLESS+WebSocket    ${YELLOW}(WS - 推荐)${NC}"
+    echo -e "    ${GREEN}3.${NC}  VLESS+gRPC         ${YELLOW}(HTTP/2)${NC}"
+    echo -e "    ${GREEN}4.${NC}  VLESS+HTTPUpgrade  ${YELLOW}(HTTP 升级)${NC}"
     echo ""
+    echo -e "  ${PURPLE}【REALITY 协议】${NC}"
+    echo -e "    ${GREEN}5.${NC}  VLESS+Vision+REALITY    ${YELLOW}(最新 - 推荐)${NC}"
+    echo -e "    ${GREEN}6.${NC}  VLESS+H2C+REALITY       ${YELLOW}(HTTP/2)${NC}"
+    echo -e "    ${GREEN}7.${NC}  VLESS+gRPC+REALITY      ${YELLOW}(gRPC)${NC}"
+    echo ""
+    echo -e "    ${GREEN}0.${NC}  返回"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择 VLESS 变体 [0-7]: " vless_type
     

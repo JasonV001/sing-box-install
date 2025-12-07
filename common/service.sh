@@ -5,28 +5,38 @@
 # 管理服务
 manage_service() {
     clear
-    echo -e "${CYAN}═══════════════════ 服务管理 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                      服务管理                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
     # 显示当前状态
     if systemctl is-active --quiet sing-box; then
-        echo -e "  Sing-box 状态: ${GREEN}运行中${NC}"
+        echo -e "  ${PURPLE}【当前状态】${NC} Sing-box: ${GREEN}●${NC} 运行中"
     else
-        echo -e "  Sing-box 状态: ${RED}已停止${NC}"
+        echo -e "  ${PURPLE}【当前状态】${NC} Sing-box: ${RED}●${NC} 已停止"
     fi
     
     echo ""
-    echo -e "  ${GREEN}1.${NC}  启动服务"
-    echo -e "  ${GREEN}2.${NC}  停止服务"
-    echo -e "  ${GREEN}3.${NC}  重启服务"
-    echo -e "  ${GREEN}4.${NC}  查看状态"
-    echo -e "  ${GREEN}5.${NC}  查看日志"
-    echo -e "  ${GREEN}6.${NC}  启用开机自启"
-    echo -e "  ${GREEN}7.${NC}  禁用开机自启"
-    echo -e "  ${GREEN}8.${NC}  重载配置"
-    echo -e "  ${GREEN}0.${NC}  返回主菜单"
+    echo -e "  ${PURPLE}【服务控制】${NC}"
+    echo -e "    ${GREEN}1.${NC}  启动服务          ${YELLOW}(Start)${NC}"
+    echo -e "    ${GREEN}2.${NC}  停止服务          ${YELLOW}(Stop)${NC}"
+    echo -e "    ${GREEN}3.${NC}  重启服务          ${YELLOW}(Restart)${NC}"
+    echo -e "    ${GREEN}4.${NC}  查看状态          ${YELLOW}(Status)${NC}"
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo -e "  ${PURPLE}【日志查看】${NC}"
+    echo -e "    ${GREEN}5.${NC}  查看日志          ${YELLOW}(实时/历史)${NC}"
+    echo ""
+    echo -e "  ${PURPLE}【开机设置】${NC}"
+    echo -e "    ${GREEN}6.${NC}  启用开机自启      ${YELLOW}(Enable)${NC}"
+    echo -e "    ${GREEN}7.${NC}  禁用开机自启      ${YELLOW}(Disable)${NC}"
+    echo ""
+    echo -e "  ${PURPLE}【配置管理】${NC}"
+    echo -e "    ${GREEN}8.${NC}  重载配置          ${YELLOW}(Reload)${NC}"
+    echo ""
+    echo -e "    ${GREEN}0.${NC}  返回主菜单"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择操作 [0-8]: " choice
     
@@ -136,14 +146,19 @@ status_service() {
 # 查看日志
 view_logs() {
     clear
-    echo -e "${CYAN}═══════════════════ 日志查看 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                      日志查看                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC}  查看实时日志"
-    echo -e "  ${GREEN}2.${NC}  查看最近100行"
-    echo -e "  ${GREEN}3.${NC}  查看最近500行"
-    echo -e "  ${GREEN}4.${NC}  查看错误日志"
-    echo -e "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${PURPLE}【日志选项】${NC}"
+    echo -e "    ${GREEN}1.${NC}  查看实时日志      ${YELLOW}(Ctrl+C 退出)${NC}"
+    echo -e "    ${GREEN}2.${NC}  查看最近100行     ${YELLOW}(快速查看)${NC}"
+    echo -e "    ${GREEN}3.${NC}  查看最近500行     ${YELLOW}(详细查看)${NC}"
+    echo -e "    ${GREEN}4.${NC}  查看错误日志      ${YELLOW}(仅错误)${NC}"
     echo ""
+    echo -e "    ${GREEN}0.${NC}  返回"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择 [0-4]: " log_choice
     

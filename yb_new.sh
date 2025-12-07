@@ -191,7 +191,7 @@ show_main_menu() {
     echo -e "    ${GREEN}2.${NC}  更新证书"
     echo ""
     echo -e "  ${PURPLE}【节点管理】${NC}"
-    echo -e "    ${GREEN}3.${NC}  配置节点"
+    echo -e "    ${GREEN}3.${NC}  安装节点"
     echo -e "    ${GREEN}4.${NC}  查看节点信息"
     echo -e "    ${GREEN}5.${NC}  节点管理"
     echo ""
@@ -211,22 +211,32 @@ show_main_menu() {
 # ==================== 协议选择菜单 ====================
 show_protocol_menu() {
     clear
-    echo -e "${CYAN}═══════════════════ 协议选择 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                      安装节点                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC}  SOCKS5"
-    echo -e "  ${GREEN}2.${NC}  HTTP"
-    echo -e "  ${GREEN}3.${NC}  AnyTLS"
-    echo -e "  ${GREEN}4.${NC}  TUIC V5"
-    echo -e "  ${GREEN}5.${NC}  Juicity"
-    echo -e "  ${GREEN}6.${NC}  Hysteria2"
-    echo -e "  ${GREEN}7.${NC}  VLESS 系列"
-    echo -e "  ${GREEN}8.${NC}  Trojan 系列"
-    echo -e "  ${GREEN}9.${NC}  VMess 系列"
-    echo -e "  ${GREEN}10.${NC} ShadowTLS V3"
-    echo -e "  ${GREEN}11.${NC} Shadowsocks"
-    echo -e "  ${GREEN}0.${NC}  返回主菜单"
+    echo -e "  ${PURPLE}【代理协议】${NC}"
+    echo -e "    ${GREEN}1.${NC}  SOCKS5          ${YELLOW}(简单代理)${NC}"
+    echo -e "    ${GREEN}2.${NC}  HTTP            ${YELLOW}(HTTP 代理)${NC}"
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo -e "  ${PURPLE}【现代协议】${NC}"
+    echo -e "    ${GREEN}3.${NC}  Hysteria2       ${YELLOW}(高速 UDP)${NC}"
+    echo -e "    ${GREEN}4.${NC}  TUIC V5         ${YELLOW}(QUIC 协议)${NC}"
+    echo -e "    ${GREEN}5.${NC}  Juicity         ${YELLOW}(QUIC 协议)${NC}"
+    echo ""
+    echo -e "  ${PURPLE}【主流协议】${NC}"
+    echo -e "    ${GREEN}6.${NC}  VLESS 系列      ${YELLOW}(推荐)${NC}"
+    echo -e "    ${GREEN}7.${NC}  VMess 系列      ${YELLOW}(V2Ray)${NC}"
+    echo -e "    ${GREEN}8.${NC}  Trojan 系列     ${YELLOW}(伪装 HTTPS)${NC}"
+    echo ""
+    echo -e "  ${PURPLE}【特殊协议】${NC}"
+    echo -e "    ${GREEN}9.${NC}  Shadowsocks     ${YELLOW}(经典协议)${NC}"
+    echo -e "    ${GREEN}10.${NC} ShadowTLS V3    ${YELLOW}(TLS 伪装)${NC}"
+    echo -e "    ${GREEN}11.${NC} AnyTLS          ${YELLOW}(通用 TLS)${NC}"
+    echo ""
+    echo -e "    ${GREEN}0.${NC}  返回主菜单"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择协议 [0-11]: " protocol_choice
     
@@ -244,8 +254,8 @@ show_protocol_menu() {
             show_protocol_menu
             ;;
         3) 
-            if load_protocol_module "AnyTLS"; then
-                configure_anytls
+            if load_protocol_module "Hysteria2"; then
+                configure_hysteria2
             fi
             show_protocol_menu
             ;;
@@ -262,14 +272,14 @@ show_protocol_menu() {
             show_protocol_menu
             ;;
         6) 
-            if load_protocol_module "Hysteria2"; then
-                configure_hysteria2
+            if load_protocol_module "VLESS"; then
+                configure_vless
             fi
             show_protocol_menu
             ;;
         7) 
-            if load_protocol_module "VLESS"; then
-                configure_vless
+            if load_protocol_module "VMess"; then
+                configure_vmess
             fi
             show_protocol_menu
             ;;
@@ -280,8 +290,8 @@ show_protocol_menu() {
             show_protocol_menu
             ;;
         9) 
-            if load_protocol_module "VMess"; then
-                configure_vmess
+            if load_protocol_module "Shadowsocks"; then
+                configure_shadowsocks
             fi
             show_protocol_menu
             ;;
@@ -292,8 +302,8 @@ show_protocol_menu() {
             show_protocol_menu
             ;;
         11) 
-            if load_protocol_module "Shadowsocks"; then
-                configure_shadowsocks
+            if load_protocol_module "AnyTLS"; then
+                configure_anytls
             fi
             show_protocol_menu
             ;;
@@ -375,17 +385,23 @@ install_acme_tools() {
 # ==================== 更新证书 ====================
 update_certificate() {
     clear
-    echo -e "${CYAN}═══════════════════ 更新证书 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                      更新证书                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
+    echo -e "  ${PURPLE}【申请方式】${NC}"
+    echo -e "    ${GREEN}1.${NC}  自动申请证书      ${YELLOW}(HTTP-01 验证)${NC}"
+    echo -e "    ${GREEN}2.${NC}  CloudFlare API    ${YELLOW}(DNS-01 验证)${NC}"
+    echo -e "    ${GREEN}3.${NC}  手动指定证书      ${YELLOW}(已有证书)${NC}"
+    echo ""
+    echo -e "  ${PURPLE}【证书管理】${NC}"
+    echo -e "    ${GREEN}4.${NC}  续期现有证书      ${YELLOW}(Renew)${NC}"
+    echo -e "    ${GREEN}5.${NC}  删除证书          ${YELLOW}(Remove)${NC}"
+    echo ""
+    echo -e "    ${GREEN}0.${NC}  返回主菜单"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
-    echo "请选择证书申请方式："
-    echo "  1. 自动申请证书（使用 acme.sh）"
-    echo "  2. 使用 CloudFlare API 申请"
-    echo "  3. 手动指定证书路径"
-    echo "  4. 续期现有证书"
-    echo "  5. 删除证书"
-    echo "  0. 返回"
-    echo ""
     read -p "请选择 [0-5]: " cert_choice
     
     case $cert_choice in
@@ -575,7 +591,10 @@ apply_certificate_cf() {
         return 1
     fi
     
+    # 设置 CloudFlare API Token
     export CF_Token
+    export CF_Account_ID=""
+    export CF_Zone_ID=""
     
     local certificate_path="/etc/ssl/private/${domain}.crt"
     local private_key_path="/etc/ssl/private/${domain}.key"
@@ -590,6 +609,11 @@ apply_certificate_cf() {
     # 设置 acme.sh 路径
     local ACME_SH=~/.acme.sh/acme.sh
     
+    # 清除可能存在的旧配置
+    print_info "清除旧配置..."
+    $ACME_SH --remove -d "$domain" 2>/dev/null
+    rm -rf ~/.acme.sh/${domain}_ecc 2>/dev/null
+    
     # 尝试从多个 CA 申请证书
     local success=false
     for ca_server in "${ca_servers[@]}"; do
@@ -597,7 +621,8 @@ apply_certificate_cf() {
         
         $ACME_SH --set-default-ca --server "$ca_server"
         
-        if $ACME_SH --issue --dns dns_cf -d "$domain" -k ec-256; then
+        # 使用 CloudFlare DNS API
+        if $ACME_SH --issue --dns dns_cf -d "$domain" -k ec-256 --debug 2>&1 | tee /tmp/acme_cf_output.log; then
             print_success "证书申请成功"
             
             # 安装证书
@@ -613,14 +638,48 @@ apply_certificate_cf() {
             success=true
             break
         else
-            print_warning "从 ${ca_server} 申请失败，尝试下一个..."
+            print_warning "从 ${ca_server} 申请失败"
+            
+            # 分析错误
+            echo ""
+            if grep -q "invalid domain" /tmp/acme_cf_output.log; then
+                print_error "域名无效"
+                echo "  请检查域名格式是否正确"
+            elif grep -q "Error adding TXT record" /tmp/acme_cf_output.log; then
+                print_error "无法添加 DNS 记录"
+                echo "  可能原因："
+                echo "  1. API Token 权限不足"
+                echo "  2. API Token 已过期"
+                echo "  3. 域名不在 CloudFlare 管理"
+            elif grep -q "CF_Token" /tmp/acme_cf_output.log; then
+                print_error "API Token 配置错误"
+                echo "  请检查 Token 是否正确"
+            fi
+            
+            echo ""
+            read -p "是否尝试下一个 CA? [Y/n]: " try_next
+            if [[ "$try_next" =~ ^[Nn]$ ]]; then
+                break
+            fi
         fi
     done
+    
+    rm -f /tmp/acme_cf_output.log
     
     if [[ "$success" == "false" ]]; then
         print_error "证书申请失败"
         echo ""
-        print_info "请检查 CloudFlare API Token 是否正确"
+        print_info "请检查："
+        echo "  1. CloudFlare API Token 是否正确"
+        echo "  2. Token 权限是否包含 'Zone.DNS.Edit'"
+        echo "  3. 域名是否在 CloudFlare 管理"
+        echo ""
+        print_info "获取 API Token："
+        echo "  1. 登录 CloudFlare"
+        echo "  2. My Profile → API Tokens"
+        echo "  3. Create Token → Edit zone DNS"
+        echo "  4. 选择域名或所有域名"
+        echo "  5. 复制 Token"
         return 1
     fi
 }
@@ -693,7 +752,9 @@ renew_certificate() {
 # 删除证书
 delete_certificate() {
     clear
-    echo -e "${CYAN}═══════════════════ 删除证书 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                      删除证书                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
     # 列出所有证书
@@ -706,7 +767,7 @@ delete_certificate() {
         return
     fi
     
-    echo -e "${GREEN}已安装的证书:${NC}"
+    echo -e "  ${PURPLE}【已安装的证书】${NC}"
     echo ""
     
     local index=1
@@ -716,13 +777,13 @@ delete_certificate() {
         local domain=$(basename "$cert_file" .crt)
         local key_file="/etc/ssl/private/${domain}.key"
         
-        echo -e "  ${CYAN}[$index]${NC} ${domain}"
+        echo -e "    ${CYAN}[$index]${NC} ${domain}"
         
         # 显示证书信息
         if [[ -f "$cert_file" ]]; then
             local expiry=$(openssl x509 -in "$cert_file" -noout -enddate 2>/dev/null | cut -d= -f2)
             if [[ -n "$expiry" ]]; then
-                echo "      过期时间: ${expiry}"
+                echo -e "        ${YELLOW}过期时间:${NC} ${expiry}"
             fi
         fi
         
@@ -731,11 +792,14 @@ delete_certificate() {
         echo ""
     done
     
-    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "  ${GREEN}A.${NC}  删除所有证书"
-    echo -e "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${PURPLE}【删除选项】${NC}"
+    echo -e "    ${GREEN}A.${NC}  删除所有证书      ${YELLOW}(清空全部)${NC}"
     echo ""
+    echo -e "    ${GREEN}0.${NC}  返回"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择要删除的证书 [1-$((index-1))/A/0]: " del_choice
     
@@ -834,7 +898,9 @@ delete_all_certificates() {
 # ==================== 节点管理 ====================
 manage_nodes() {
     clear
-    echo -e "${CYAN}═══════════════════ 节点管理 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                      节点管理                             ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
     local config_file="${CONFIG_DIR}/config.json"
@@ -856,22 +922,25 @@ manage_nodes() {
     fi
     
     # 显示所有节点
-    echo -e "${GREEN}当前节点列表:${NC}"
+    echo -e "  ${PURPLE}【当前节点列表】${NC}"
     echo ""
     
     local index=1
     while IFS='|' read -r type tag port; do
-        echo -e "  ${CYAN}[$index]${NC} ${type} - ${tag} (端口: ${port})"
+        echo -e "    ${CYAN}[$index]${NC} ${type} - ${tag} ${YELLOW}(端口: ${port})${NC}"
         ((index++))
     done < <(jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file")
     
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC}  删除单个节点"
-    echo -e "  ${GREEN}2.${NC}  删除全部节点"
-    echo -e "  ${GREEN}0.${NC}  返回"
+    echo -e "  ${PURPLE}【管理操作】${NC}"
+    echo -e "    ${GREEN}1.${NC}  删除单个节点      ${YELLOW}(选择删除)${NC}"
+    echo -e "    ${GREEN}2.${NC}  删除全部节点      ${YELLOW}(清空配置)${NC}"
     echo ""
+    echo -e "    ${GREEN}0.${NC}  返回主菜单"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择操作 [0-2]: " manage_choice
     
@@ -896,7 +965,9 @@ manage_nodes() {
 # 删除单个节点
 delete_single_node() {
     clear
-    echo -e "${CYAN}═══════════════════ 删除节点 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    删除单个节点                           ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
     local config_file="${CONFIG_DIR}/config.json"
@@ -910,21 +981,22 @@ delete_single_node() {
     fi
     
     # 显示节点列表
-    echo -e "${GREEN}请选择要删除的节点:${NC}"
+    echo -e "  ${PURPLE}【请选择要删除的节点】${NC}"
     echo ""
     
     declare -a node_tags
     local index=1
     
     while IFS='|' read -r type tag port; do
-        echo -e "  ${CYAN}[$index]${NC} ${type} - ${tag} (端口: ${port})"
+        echo -e "    ${CYAN}[$index]${NC} ${type} - ${tag} ${YELLOW}(端口: ${port})${NC}"
         node_tags[$index]="$tag"
         ((index++))
     done < <(jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file")
     
     echo ""
-    echo -e "  ${GREEN}0.${NC}  返回"
+    echo -e "    ${GREEN}0.${NC}  返回"
     echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
     read -p "请选择节点序号 [0-$((index-1))]: " node_index
     
@@ -970,10 +1042,14 @@ delete_single_node() {
 # 删除全部节点
 delete_all_nodes() {
     clear
-    echo -e "${CYAN}═══════════════════ 删除全部节点 ═══════════════════${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    删除全部节点                           ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
     print_warning "此操作将删除所有节点配置！"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
     read -p "确认删除全部节点? 输入 yes 确认: " confirm
     
