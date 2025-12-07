@@ -5,7 +5,7 @@
 ### 一键安装
 
 ```bash
-bash <(curl -sSL https://your-domain/install.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/JasonV001/sing-box-install/refs/heads/main/install.sh)
 ```
 
 ### 运行脚本
