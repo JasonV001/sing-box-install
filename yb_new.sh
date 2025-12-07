@@ -16,7 +16,14 @@ PURPLE='\033[0;35m'
 NC='\033[0m'
 
 # ==================== 路径配置 ====================
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 获取脚本真实路径(处理软链接)
+if [[ -L "${BASH_SOURCE[0]}" ]]; then
+    # 如果是软链接,获取真实路径
+    SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+else
+    SCRIPT_PATH="${BASH_SOURCE[0]}"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 PROTOCOLS_DIR="${SCRIPT_DIR}/protocols"
 CONFIG_DIR="/usr/local/etc/sing-box"
 CERT_DIR="/etc/ssl/private"
