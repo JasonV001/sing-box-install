@@ -166,6 +166,9 @@ install_argo_quick() {
     read -p "请输入本地服务端口 (默认443): " local_port
     local_port=${local_port:-443}
     
+    # 检查并创建 VLESS+WS 节点
+    check_and_create_vless_ws_node "$local_port"
+    
     read -p "请选择IP版本 [4/6] (默认4): " ip_version
     ip_version=${ip_version:-4}
     
@@ -196,6 +199,55 @@ EOF
     systemctl start argo-quick
     
     print_success "Argo Quick Tunnel 已启动"
+    echo ""
+    
+    # 检查本地端口是否有服务
+    print_info "检查本地端口 ${local_port} 是否有服务运行..."
+    sleep 2
+    
+    if ! ss -tuln | grep -q ":${local_port} "; then
+        print_warning "本地端口 ${local_port} 没有服务运行"
+        echo ""
+        echo -e "${YELLOW}Argo 隧道需要本地端口有服务才能正常工作${NC}"
+        echo ""
+        echo "请选择操作:"
+        echo "  1. 继续获取域名（稍后配置 Sing-box）"
+        echo "  2. 现在配置 Sing-box"
+        echo "  0. 取消"
+        echo ""
+        read -p "请选择 [0-2]: " port_choice
+        
+        case $port_choice in
+            1)
+                print_info "继续获取域名..."
+                ;;
+            2)
+                print_info "跳转到 Sing-box 配置..."
+                echo ""
+                read -p "按回车键继续..."
+                # 返回主菜单，用户可以选择配置节点
+                return 0
+                ;;
+            0)
+                print_info "取消安装"
+                systemctl stop argo-quick
+                systemctl disable argo-quick 2>/dev/null
+                rm -f /etc/systemd/system/argo-quick.service
+                systemctl daemon-reload
+                sleep 2
+                return 1
+                ;;
+            *)
+                print_error "无效的选择"
+                sleep 2
+                return 1
+                ;;
+        esac
+    else
+        print_success "本地端口 ${local_port} 有服务运行"
+    fi
+    
+    echo ""
     print_info "等待获取临时域名..."
     
     # 等待服务启动并获取域名（最多等待30秒）
@@ -330,11 +382,47 @@ generate_argo_node_link() {
         fi
     fi
     
-    # 如果没有找到配置，生成新的 UUID
+    # 如果没有找到配置，生成新的 UUID 并给出详细提示
     if [[ -z "$uuid" && -z "$password" ]]; then
         uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
-        print_warning "未找到端口 $local_port 的配置，已生成新 UUID"
-        print_info "UUID: ${uuid}"
+        
+        echo ""
+        print_warning "未找到端口 $local_port 的 Sing-box 配置"
+        echo ""
+        echo -e "${YELLOW}═══════════════════ 重要提示 ═══════════════════${NC}"
+        echo ""
+        echo "Argo 隧道已启动，已为您生成通用节点链接（TLS + 非TLS）"
+        echo ""
+        echo -e "${CYAN}生成的链接包括:${NC}"
+        echo "  ✓ TLS 链接 (443端口) - 推荐使用"
+        echo "  ✓ 非 TLS 链接 (80端口) - 备用"
+        echo "  ✓ CF 优选 IP 链接 - 可能更快"
+        echo "  ✓ 多个备用端口选项"
+        echo ""
+        echo -e "${CYAN}下一步操作:${NC}"
+        echo ""
+        echo "1. 配置 Sing-box (使用生成的 UUID):"
+        echo "   bash yb_new.sh"
+        echo "   选择: 2. 配置节点"
+        echo "   选择: 7. VLESS 系列 (推荐)"
+        echo ""
+        echo "2. 使用以下配置:"
+        echo "   端口: ${local_port}"
+        echo "   UUID: ${uuid}"
+        echo "   传输: WebSocket"
+        echo "   路径: /"
+        echo ""
+        echo "3. 配置完成后可刷新节点链接:"
+        echo "   bash yb_new.sh"
+        echo "   选择: 5. 配置 Argo 隧道"
+        echo "   选择: 5. 刷新域名和节点链接"
+        echo ""
+        echo -e "${YELLOW}═══════════════════════════════════════════════${NC}"
+        echo ""
+        
+        print_success "已生成 UUID: ${uuid}"
+        print_info "节点链接已生成，请查看下方详细信息"
+        echo ""
     fi
     
     # 生成完整的节点链接文件
@@ -715,6 +803,9 @@ install_argo_token() {
     read -p "请输入本地服务端口 (默认443): " local_port
     local_port=${local_port:-443}
     
+    # 检查并创建 VLESS+WS 节点
+    check_and_create_vless_ws_node "$local_port"
+    
     # 创建systemd服务
     print_info "创建服务配置..."
     cat > /etc/systemd/system/argo-tunnel.service << EOF
@@ -742,6 +833,28 @@ EOF
     chmod 600 "${ARGO_DIR}/token.txt"
     
     print_success "Argo Tunnel (Token) 已启动"
+    echo ""
+    
+    # 检查本地端口
+    print_info "检查本地端口 ${local_port}..."
+    sleep 2
+    
+    if ! ss -tuln | grep -q ":${local_port} "; then
+        print_warning "本地端口 ${local_port} 没有服务运行"
+        echo ""
+        echo -e "${YELLOW}重要提示:${NC}"
+        echo "  Argo 隧道已启动，但本地端口 ${local_port} 没有服务"
+        echo "  这会导致连接失败 (connection refused)"
+        echo ""
+        echo -e "${CYAN}解决方法:${NC}"
+        echo "  1. 配置 Sing-box 监听端口 ${local_port}"
+        echo "  2. 使用命令: bash yb_new.sh -> 2 -> 选择协议"
+        echo "  3. 配置完成后，使用 '刷新域名' 功能更新节点链接"
+        echo ""
+    else
+        print_success "本地端口 ${local_port} 有服务运行"
+    fi
+    
     echo ""
     
     # 生成节点链接
@@ -838,6 +951,9 @@ install_argo_json() {
         return 1
     fi
     
+    # 检查并创建 VLESS+WS 节点
+    check_and_create_vless_ws_node "$local_port"
+    
     # 创建凭证文件
     mkdir -p ~/.cloudflared
     cat > ~/.cloudflared/${tunnel_uuid}.json << EOF
@@ -882,6 +998,31 @@ EOF
     systemctl daemon-reload
     systemctl enable argo-tunnel 2>/dev/null
     systemctl start argo-tunnel
+    
+    print_success "Argo Tunnel (JSON) 已启动"
+    echo ""
+    
+    # 检查本地端口
+    print_info "检查本地端口 ${local_port}..."
+    sleep 2
+    
+    if ! ss -tuln | grep -q ":${local_port} "; then
+        print_warning "本地端口 ${local_port} 没有服务运行"
+        echo ""
+        echo -e "${YELLOW}重要提示:${NC}"
+        echo "  Argo 隧道已启动，但本地端口 ${local_port} 没有服务"
+        echo "  这会导致连接失败 (connection refused)"
+        echo ""
+        echo -e "${CYAN}解决方法:${NC}"
+        echo "  1. 配置 Sing-box 监听端口 ${local_port}"
+        echo "  2. 使用命令: bash yb_new.sh -> 2 -> 选择协议"
+        echo "  3. 配置完成后，使用 '刷新域名' 功能更新节点链接"
+        echo ""
+    else
+        print_success "本地端口 ${local_port} 有服务运行"
+    fi
+    
+    echo ""
     
     # 生成节点链接
     generate_argo_node_link "$tunnel_domain" "$local_port"
@@ -1128,4 +1269,164 @@ uninstall_argo() {
     
     print_success "Argo 隧道已卸载"
     sleep 2
+}
+
+# 检查并创建 VLESS+WS 节点
+check_and_create_vless_ws_node() {
+    local port=$1
+    local config_file="${CONFIG_DIR}/config.json"
+    
+    echo ""
+    print_info "检查端口 ${port} 的配置..."
+    
+    # 检查 sing-box 是否已安装
+    if ! command -v sing-box &>/dev/null; then
+        print_warning "未检测到 sing-box"
+        echo ""
+        read -p "是否现在安装 sing-box? [Y/n]: " install_sb
+        if [[ ! "$install_sb" =~ ^[Nn]$ ]]; then
+            source "${SCRIPT_DIR}/common/install.sh"
+            install_sing_box
+        else
+            print_info "跳过 sing-box 安装"
+            return 0
+        fi
+    fi
+    
+    # 检查配置文件是否存在
+    if [[ ! -f "$config_file" ]]; then
+        print_info "配置文件不存在，创建基础配置..."
+        mkdir -p "${CONFIG_DIR}"
+        cat > "$config_file" << 'EOF'
+{
+  "log": {"level": "info", "timestamp": true},
+  "inbounds": [],
+  "outbounds": [
+    {"type": "direct", "tag": "direct"},
+    {"type": "block", "tag": "block"}
+  ]
+}
+EOF
+        print_success "基础配置已创建"
+    fi
+    
+    # 检查端口是否已配置
+    local existing_config=$(jq -r ".inbounds[] | select(.listen_port == $port)" "$config_file" 2>/dev/null)
+    
+    if [[ -n "$existing_config" ]]; then
+        local protocol=$(echo "$existing_config" | jq -r '.type')
+        local has_ws=$(echo "$existing_config" | jq -r '.transport.type // empty')
+        
+        if [[ "$protocol" == "vless" && "$has_ws" == "ws" ]]; then
+            print_success "端口 ${port} 已配置 VLESS+WebSocket"
+            local uuid=$(echo "$existing_config" | jq -r '.users[0].uuid')
+            echo "  UUID: ${uuid}"
+            return 0
+        else
+            print_warning "端口 ${port} 已被其他协议占用: ${protocol}"
+            echo ""
+            read -p "是否继续使用此端口? [Y/n]: " continue_port
+            if [[ "$continue_port" =~ ^[Nn]$ ]]; then
+                return 1
+            fi
+            return 0
+        fi
+    fi
+    
+    # 端口未配置，询问是否创建
+    print_warning "端口 ${port} 未配置 VLESS+WebSocket 节点"
+    echo ""
+    echo -e "${CYAN}Argo 隧道需要本地端口运行 VLESS+WebSocket 服务${NC}"
+    echo ""
+    read -p "是否自动创建 VLESS+WebSocket 节点? [Y/n]: " create_node
+    
+    if [[ "$create_node" =~ ^[Nn]$ ]]; then
+        print_info "跳过节点创建"
+        echo ""
+        print_warning "注意: 没有本地服务，Argo 隧道将无法正常工作"
+        echo ""
+        read -p "按回车键继续..."
+        return 0
+    fi
+    
+    # 创建 VLESS+WS 节点
+    print_info "创建 VLESS+WebSocket 节点..."
+    echo ""
+    
+    # 生成配置参数
+    local uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)
+    local path="/"
+    
+    print_success "UUID: ${uuid}"
+    print_success "Path: ${path}"
+    
+    # 添加到配置文件
+    local inbound=$(cat <<EOF
+{
+  "type": "vless",
+  "tag": "vless-ws-argo-${port}",
+  "listen": "::",
+  "listen_port": ${port},
+  "users": [{"uuid": "${uuid}"}],
+  "transport": {
+    "type": "ws",
+    "path": "${path}"
+  }
+}
+EOF
+)
+    
+    local temp_file=$(mktemp)
+    jq ".inbounds += [$inbound]" "$config_file" > "$temp_file" && mv "$temp_file" "$config_file"
+    
+    print_success "配置已添加到 ${config_file}"
+    
+    # 重启 sing-box 服务
+    print_info "重启 sing-box 服务..."
+    systemctl restart sing-box
+    
+    sleep 2
+    
+    if systemctl is-active --quiet sing-box; then
+        print_success "sing-box 服务已启动"
+        
+        # 验证端口是否监听
+        if ss -tuln | grep -q ":${port} "; then
+            print_success "端口 ${port} 已成功监听"
+        else
+            print_warning "端口 ${port} 未监听，请检查配置"
+        fi
+    else
+        print_error "sing-box 服务启动失败"
+        echo ""
+        print_info "查看错误日志: journalctl -u sing-box -n 50"
+        echo ""
+        read -p "按回车键继续..."
+        return 1
+    fi
+    
+    # 保存节点信息
+    mkdir -p "${LINK_DIR}"
+    cat > "${LINK_DIR}/vless_ws_argo_${port}.txt" << EOF
+========================================
+VLESS+WebSocket 节点信息 (Argo)
+========================================
+端口: ${port}
+UUID: ${uuid}
+传输: WebSocket
+路径: ${path}
+
+此节点已为 Argo 隧道配置
+可通过 Argo 域名访问
+
+配置文件: ${config_file}
+========================================
+EOF
+    
+    echo ""
+    print_success "VLESS+WebSocket 节点创建完成"
+    echo ""
+    cat "${LINK_DIR}/vless_ws_argo_${port}.txt"
+    echo ""
+    read -p "按回车键继续..."
 }
