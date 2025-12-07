@@ -143,6 +143,16 @@ configure_relay_chain() {
     declare -a node_servers
     
     while IFS='|' read -r tag type server port; do
+        # 跳过系统 outbound (direct, block, dns-out 等)
+        if [[ "$type" == "direct" || "$type" == "block" || "$type" == "dns" || "$tag" == "direct" || "$tag" == "block" || "$tag" == "dns-out" ]]; then
+            continue
+        fi
+        
+        # 跳过没有服务器信息的 outbound
+        if [[ "$server" == "N/A" || -z "$server" ]]; then
+            continue
+        fi
+        
         node_tags[$index]="$tag"
         node_types[$index]="$type"
         node_servers[$index]="$server"
@@ -155,7 +165,15 @@ configure_relay_chain() {
     done < <(jq -r '.outbounds[] | "\(.tag)|\(.type)|\(.server // "N/A")|\(.server_port // .listen_port // "N/A")"' "$config_file")
     
     if [[ $index -eq 1 ]]; then
-        print_error "没有可用的节点"
+        print_error "没有可用的代理节点"
+        echo ""
+        echo -e "${YELLOW}提示:${NC}"
+        echo "  • 当前只有系统 outbound (direct/block)"
+        echo "  • 请先添加代理节点（VLESS/Trojan/VMess 等）"
+        echo "  • 至少需要 2 个代理节点才能配置代理链"
+        echo ""
+        print_info "返回主菜单，选择 '3. 安装节点' 添加代理节点"
+        echo ""
         read -p "按回车键继续..."
         return
     fi
