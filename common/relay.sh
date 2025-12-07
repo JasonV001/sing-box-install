@@ -1058,25 +1058,20 @@ install_gost() {
     local filename
     local is_tarball=false
     
-    # 提取主版本号和次版本号
-    local major_version="${version_num%%.*}"
-    local minor_version="${version_num#*.}"
-    minor_version="${minor_version%%.*}"
-    
-    # 比较版本号 (2.12+ 使用新格式)
-    if [[ "$major_version" -eq 2 ]] && [[ "$minor_version" -ge 12 ]]; then
-        # 新格式 (v2.12.0+)
-        filename="gost_${version_num}_${gost_arch}.tar.gz"
-        is_tarball=true
-    elif [[ "$major_version" -gt 2 ]]; then
-        # 新格式 (v3.0+)
-        filename="gost_${version_num}_${gost_arch}.tar.gz"
-        is_tarball=true
-    else
-        # 旧格式 (v2.11.x 及更早)
-        filename="gost-${gost_arch}-${version_num}.gz"
-        is_tarball=false
-    fi
+    # 简单判断：v2.12.0+ 使用新格式，其他使用旧格式
+    # 使用字符串比较避免算术错误
+    case "$version_num" in
+        2.1[2-9].*|2.[2-9]*.*|[3-9].*.*|[1-9][0-9].*.*)
+            # 新格式 (v2.12.0+)
+            filename="gost_${version_num}_${gost_arch}.tar.gz"
+            is_tarball=true
+            ;;
+        *)
+            # 旧格式 (v2.11.x 及更早)
+            filename="gost-${gost_arch}-${version_num}.gz"
+            is_tarball=false
+            ;;
+    esac
     
     # 定义多个下载源
     local download_urls=(
