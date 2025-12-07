@@ -4,6 +4,11 @@
 # 功能: 使用 Sing-box 现有节点作为中转，为其他节点配置代理链
 # 不需要额外的 Gost 服务，纯 Sing-box 实现
 
+# 配置目录（如果未定义）
+if [[ -z "$CONFIG_DIR" ]]; then
+    CONFIG_DIR="/usr/local/etc/sing-box"
+fi
+
 # 配置文件
 NATIVE_RELAY_CONFIG="${CONFIG_DIR}/native_relay.conf"
 
