@@ -144,11 +144,12 @@ view_nodes() {
     echo -e "  ${GREEN}A.${NC}  查看所有节点链接"
     echo -e "  ${GREEN}B.${NC}  导出所有链接"
     echo -e "  ${GREEN}C.${NC}  生成订阅链接"
-    echo -e "  ${GREEN}D.${NC}  查看配置文件路径"
+    echo -e "  ${GREEN}D.${NC}  生成节点文件      ${YELLOW}(完整信息)${NC}"
+    echo -e "  ${GREEN}E.${NC}  查看配置文件路径"
     echo -e "  ${GREEN}0.${NC}  返回主菜单"
     echo ""
     
-    read -p "请选择 [1-$((menu_index-1))/A-D/0]: " choice
+    read -p "请选择 [1-$((menu_index-1))/A-E/0]: " choice
     
     case $choice in
         [1-9]|[1-9][0-9])
@@ -163,7 +164,8 @@ view_nodes() {
         [Aa]) view_all_node_links ;;
         [Bb]) export_all_links ;;
         [Cc]) generate_subscription ;;
-        [Dd]) view_config_paths ;;
+        [Dd]) generate_node_file ;;
+        [Ee]) view_config_paths ;;
         0) return ;;
         *) print_error "无效的选择"; sleep 2; view_nodes ;;
     esac
@@ -575,4 +577,260 @@ view_service_status() {
     
     echo ""
     read -p "按回车键继续..."
+}
+
+
+# 生成节点文件
+generate_node_file() {
+    clear
+    echo -e "${CYAN}═══════════════════ 生成节点文件 ═══════════════════${NC}"
+    echo ""
+    
+    local config_file="${CONFIG_DIR}/config.json"
+    local output_file="${CONFIG_DIR}/nodes_info.txt"
+    
+    if [[ ! -f "$config_file" ]]; then
+        print_warning "配置文件不存在，无法生成节点文件"
+        read -p "按回车键继续..."
+        view_nodes
+        return
+    fi
+    
+    print_info "正在生成节点文件..."
+    echo ""
+    
+    # 创建节点文件
+    cat > "$output_file" << EOF
+╔═══════════════════════════════════════════════════════════╗
+║                    Sing-box 节点信息                      ║
+╚═══════════════════════════════════════════════════════════╝
+
+生成时间: $(date '+%Y-%m-%d %H:%M:%S')
+服务器IP: ${SERVER_IP:-未设置}
+
+═══════════════════════════════════════════════════════════
+
+EOF
+    
+    # 统计节点数量
+    local total_nodes=0
+    declare -A protocol_counts
+    
+    # 读取所有节点
+    mapfile -t inbound_lines < <(jq -r '.inbounds[] | "\(.type)|\(.tag)|\(.listen_port)"' "$config_file" 2>/dev/null)
+    
+    for line in "${inbound_lines[@]}"; do
+        [[ -z "$line" ]] && continue
+        IFS='|' read -r type tag port <<< "$line"
+        
+        ((total_nodes++))
+        if [[ -z "${protocol_counts[$type]}" ]]; then
+            protocol_counts[$type]=1
+        else
+            protocol_counts[$type]=$((${protocol_counts[$type]} + 1))
+        fi
+    done
+    
+    # 写入统计信息
+    cat >> "$output_file" << EOF
+【节点统计】
+
+总节点数: ${total_nodes}
+
+协议分布:
+EOF
+    
+    for proto in "${!protocol_counts[@]}"; do
+        echo "  • ${proto^^}: ${protocol_counts[$proto]} 个" >> "$output_file"
+    done
+    
+    echo "" >> "$output_file"
+    echo "═══════════════════════════════════════════════════════════" >> "$output_file"
+    echo "" >> "$output_file"
+    
+    # 按协议分类输出节点详细信息
+    for proto in socks shadowsocks vless vmess trojan hysteria2 tuic juicity; do
+        local has_proto=false
+        
+        # 检查是否有该协议的节点
+        for line in "${inbound_lines[@]}"; do
+            [[ -z "$line" ]] && continue
+            IFS='|' read -r type tag port <<< "$line"
+            
+            if [[ "$type" == "$proto" ]]; then
+                if [[ "$has_proto" == false ]]; then
+                    # 写入协议标题
+                    cat >> "$output_file" << EOF
+【${proto^^} 节点】
+
+EOF
+                    has_proto=true
+                fi
+                
+                # 写入节点基本信息
+                cat >> "$output_file" << EOF
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+节点标签: ${tag}
+监听端口: ${port}
+协议类型: ${type}
+
+EOF
+                
+                # 查找并写入分享链接
+                local link_file=$(find "${LINK_DIR}" -name "*_${port}.txt" ! -name "argo_*" 2>/dev/null | head -1)
+                if [[ -f "$link_file" ]]; then
+                    # 提取分享链接
+                    local share_link=$(grep -E "^(vmess|vless|trojan|ss|hysteria2|socks5|tuic|juicity)://" "$link_file" | head -1)
+                    if [[ -n "$share_link" ]]; then
+                        echo "分享链接:" >> "$output_file"
+                        echo "$share_link" >> "$output_file"
+                        echo "" >> "$output_file"
+                    fi
+                    
+                    # 提取其他信息（如果有）
+                    if grep -q "UUID\|密码\|用户名" "$link_file" 2>/dev/null; then
+                        echo "节点信息:" >> "$output_file"
+                        grep -E "UUID|密码|用户名|Public Key|Short ID|SNI" "$link_file" 2>/dev/null | sed 's/^/  /' >> "$output_file"
+                        echo "" >> "$output_file"
+                    fi
+                fi
+                
+                # 写入配置详情
+                echo "配置详情:" >> "$output_file"
+                jq ".inbounds[] | select(.tag == \"$tag\")" "$config_file" 2>/dev/null | sed 's/^/  /' >> "$output_file"
+                echo "" >> "$output_file"
+            fi
+        done
+        
+        if [[ "$has_proto" == true ]]; then
+            echo "" >> "$output_file"
+        fi
+    done
+    
+    # 添加 Argo 隧道节点
+    if [[ -d "${LINK_DIR}" ]]; then
+        local argo_count=0
+        local argo_files=()
+        
+        while IFS= read -r argo_file; do
+            [[ -z "$argo_file" ]] && continue
+            local filename=$(basename "$argo_file")
+            
+            if [[ "$filename" =~ argo_(quick|token|json)_([0-9]+)\.txt ]]; then
+                argo_files+=("$argo_file")
+                ((argo_count++))
+            fi
+        done < <(find "${LINK_DIR}" -name "argo_*.txt" ! -name "argo_node_*.txt" 2>/dev/null)
+        
+        if [[ $argo_count -gt 0 ]]; then
+            cat >> "$output_file" << EOF
+【ARGO 隧道节点】
+
+EOF
+            
+            for argo_file in "${argo_files[@]}"; do
+                local filename=$(basename "$argo_file")
+                [[ "$filename" =~ argo_(quick|token|json)_([0-9]+)\.txt ]]
+                local argo_type="${BASH_REMATCH[1]}"
+                local port="${BASH_REMATCH[2]}"
+                
+                cat >> "$output_file" << EOF
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+隧道类型: ${argo_type^}
+本地端口: ${port}
+
+EOF
+                
+                # 提取域名
+                local domain=$(grep -E "临时域名:|域名:" "$argo_file" | head -1 | awk '{print $2}')
+                [[ -n "$domain" ]] && echo "Argo 域名: ${domain}" >> "$output_file"
+                echo "" >> "$output_file"
+                
+                # 添加节点链接
+                local node_link_file="${LINK_DIR}/argo_node_${port}.txt"
+                if [[ -f "$node_link_file" ]]; then
+                    echo "节点链接:" >> "$output_file"
+                    echo "" >> "$output_file"
+                    
+                    # 直连链接
+                    local direct_link=$(grep "【直连链接】" -A 1 "$node_link_file" | tail -1)
+                    if [[ -n "$direct_link" ]]; then
+                        echo "  直连链接:" >> "$output_file"
+                        echo "  $direct_link" >> "$output_file"
+                        echo "" >> "$output_file"
+                    fi
+                    
+                    # CF 优选 IP
+                    local cf_link=$(grep "【CF 优选 IP】" -A 1 "$node_link_file" | tail -1)
+                    if [[ -n "$cf_link" ]]; then
+                        echo "  CF 优选 IP:" >> "$output_file"
+                        echo "  $cf_link" >> "$output_file"
+                        echo "" >> "$output_file"
+                    fi
+                    
+                    # 非 TLS 链接
+                    local notls_link=$(grep "【非 TLS 链接】" -A 1 "$node_link_file" | tail -1)
+                    if [[ -n "$notls_link" ]]; then
+                        echo "  非 TLS 链接:" >> "$output_file"
+                        echo "  $notls_link" >> "$output_file"
+                        echo "" >> "$output_file"
+                    fi
+                fi
+            done
+            
+            echo "" >> "$output_file"
+        fi
+    fi
+    
+    # 添加配置文件路径
+    cat >> "$output_file" << EOF
+═══════════════════════════════════════════════════════════
+
+【配置文件路径】
+
+Sing-box 配置: ${config_file}
+证书目录: ${CERT_DIR}
+链接目录: ${LINK_DIR}
+节点文件: ${output_file}
+
+═══════════════════════════════════════════════════════════
+
+【使用说明】
+
+1. 分享链接可以直接导入到客户端
+2. 配置详情可用于手动配置
+3. 此文件包含敏感信息，请妥善保管
+
+生成完成！
+
+EOF
+    
+    print_success "节点文件已生成"
+    echo ""
+    echo -e "${CYAN}文件位置:${NC} ${output_file}"
+    echo ""
+    echo -e "${CYAN}文件大小:${NC} $(du -h "$output_file" | cut -f1)"
+    echo ""
+    echo -e "${YELLOW}提示:${NC} 此文件包含所有节点的完整信息，包括分享链接和配置详情"
+    echo ""
+    
+    read -p "是否现在查看文件内容? [Y/n]: " view_now
+    
+    if [[ ! "$view_now" =~ ^[Nn]$ ]]; then
+        clear
+        cat "$output_file"
+        echo ""
+    fi
+    
+    echo ""
+    echo -e "${CYAN}下载命令:${NC}"
+    echo "  scp root@${SERVER_IP:-your-server}:${output_file} ./"
+    echo ""
+    echo -e "${CYAN}查看命令:${NC}"
+    echo "  cat ${output_file}"
+    echo "  less ${output_file}"
+    echo ""
+    
+    read -p "按回车键返回..."
+    view_nodes
 }
