@@ -294,93 +294,166 @@ EOF
     read -p "按回车键继续..."
 }
 
-# 生成 Argo 节点链接
+# 生成 Argo 节点链接（增强版）
 generate_argo_node_link() {
     local domain=$1
     local local_port=$2
     
-    # Argo 隧道说明:
-    # - Argo 提供 HTTPS (443端口) 访问
-    # - 自动提供 TLS 加密
-    # - 使用 WebSocket 传输
-    
     # 检查本地端口对应的协议配置
     local config_file="${CONFIG_DIR}/config.json"
     
-    if [[ ! -f "$config_file" ]]; then
-        print_warning "配置文件不存在，生成通用 VLESS+WS+TLS 节点链接"
-        local new_uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
+    # 默认值
+    local protocol="vless"
+    local uuid=""
+    local password=""
+    local tag="Port${local_port}"
+    
+    if [[ -f "$config_file" ]]; then
+        # 查找对应端口的inbound配置
+        local inbound=$(jq -r ".inbounds[] | select(.listen_port == $local_port)" "$config_file" 2>/dev/null)
         
-        # Argo 隧道使用 443 端口，自带 TLS
-        local link="vless://${new_uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-Port${local_port}"
-        echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
-        
-        print_success "已生成 VLESS+WS+TLS 节点链接"
-        print_info "注意: 请在 Sing-box 中配置端口 ${local_port} 的 VLESS 服务"
-        print_info "UUID: ${new_uuid}"
-        echo ""
-        echo -e "${GREEN}节点链接:${NC}"
-        echo "$link"
-        return 0
+        if [[ -n "$inbound" ]]; then
+            protocol=$(echo "$inbound" | jq -r '.type')
+            tag=$(echo "$inbound" | jq -r '.tag')
+            
+            case $protocol in
+                vless)
+                    uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
+                    ;;
+                vmess)
+                    uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
+                    ;;
+                trojan)
+                    password=$(echo "$inbound" | jq -r '.users[0].password // empty')
+                    ;;
+            esac
+        fi
     fi
     
-    # 查找对应端口的inbound配置
-    local inbound=$(jq -r ".inbounds[] | select(.listen_port == $local_port)" "$config_file" 2>/dev/null)
-    
-    if [[ -z "$inbound" ]]; then
-        print_warning "未找到端口 $local_port 的配置，生成通用 VLESS+WS+TLS 节点链接"
-        local new_uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
-        
-        # Argo 隧道使用 443 端口，自带 TLS
-        local link="vless://${new_uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-Port${local_port}"
-        echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
-        
-        print_success "已生成 VLESS+WS+TLS 节点链接"
-        print_info "注意: 请在 Sing-box 中配置端口 ${local_port} 的 VLESS 服务"
-        print_info "UUID: ${new_uuid}"
-        echo ""
-        echo -e "${GREEN}节点链接:${NC}"
-        echo "$link"
-        return 0
+    # 如果没有找到配置，生成新的 UUID
+    if [[ -z "$uuid" && -z "$password" ]]; then
+        uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
+        print_warning "未找到端口 $local_port 的配置，已生成新 UUID"
+        print_info "UUID: ${uuid}"
     fi
     
-    local protocol=$(echo "$inbound" | jq -r '.type')
-    local tag=$(echo "$inbound" | jq -r '.tag')
+    # 生成完整的节点链接文件
+    mkdir -p "${LINK_DIR}"
     
-    # 根据协议生成链接
-    # Argo 隧道: 域名:443 + TLS + WebSocket
     case $protocol in
         vless)
-            local uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
-            if [[ -n "$uuid" ]]; then
-                # VLESS + WebSocket + TLS (Argo 提供)
-                local link="vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
-                echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
-                
-                print_success "已生成 VLESS+WS+TLS 节点链接"
-                echo ""
-                echo -e "${GREEN}节点链接:${NC}"
-                echo "$link"
-            fi
-            ;;
-        trojan)
-            local password=$(echo "$inbound" | jq -r '.users[0].password // empty')
-            if [[ -n "$password" ]]; then
-                # Trojan + WebSocket + TLS (Argo 提供)
-                local link="trojan://${password}@${domain}:443?security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
-                echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
-                
-                print_success "已生成 Trojan+WS+TLS 节点链接"
-                echo ""
-                echo -e "${GREEN}节点链接:${NC}"
-                echo "$link"
-            fi
+            generate_vless_links "$domain" "$uuid" "$tag" "$local_port"
             ;;
         vmess)
-            local uuid=$(echo "$inbound" | jq -r '.users[0].uuid // empty')
-            if [[ -n "$uuid" ]]; then
-                # VMess + WebSocket + TLS (Argo 提供)
-                local vmess_json=$(cat <<EOF
+            generate_vmess_links "$domain" "$uuid" "$tag" "$local_port"
+            ;;
+        trojan)
+            generate_trojan_links "$domain" "$password" "$tag" "$local_port"
+            ;;
+        *)
+            print_warning "协议 $protocol 暂不支持 Argo 隧道"
+            echo "https://${domain}" > "${LINK_DIR}/argo_node_${local_port}.txt"
+            ;;
+    esac
+}
+
+# 生成 VLESS 链接
+generate_vless_links() {
+    local domain=$1
+    local uuid=$2
+    local tag=$3
+    local port=$4
+    
+    # 直连链接
+    local link_direct="vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
+    
+    # CF 优选 IP 链接
+    local link_cf="vless://${uuid}@www.visa.com.sg:443?encryption=none&security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}-CF"
+    
+    # 非 TLS 链接
+    local link_notls="vless://${uuid}@${domain}:80?encryption=none&security=none&type=ws&host=${domain}&path=%2F#Argo-${tag}-NoTLS"
+    
+    # 保存到文件
+    cat > "${LINK_DIR}/argo_node_${port}.txt" << EOF
+========================================
+Argo VLESS 节点链接
+========================================
+
+【直连链接】(推荐 - 最稳定)
+${link_direct}
+
+【CF 优选 IP】(可能更快)
+${link_cf}
+
+【备用端口】(TLS)
+443 (推荐), 2053, 2083, 2087, 2096, 8443
+
+【非 TLS 链接】(80端口)
+${link_notls}
+
+【备用端口】(非TLS)
+80, 8080, 8880, 2052, 2082, 2086, 2095
+
+========================================
+使用说明
+========================================
+
+1. 直连链接:
+   - 最稳定可靠
+   - 直接使用 Argo 域名
+   - 推荐日常使用
+
+2. CF 优选 IP:
+   - 使用 www.visa.com.sg 作为连接地址
+   - 可能获得更快的速度
+   - 需要客户端支持 SNI
+
+3. 备用端口:
+   - 如果 443 端口被限制，可尝试其他端口
+   - TLS 端口: 443, 2053, 2083, 2087, 2096, 8443
+   - 非 TLS 端口: 80, 8080, 8880, 2052, 2082, 2086, 2095
+
+4. 非 TLS 链接:
+   - 使用 80 端口，不加密传输
+   - 如果无法使用，请检查 CF 设置
+   - 关闭 "始终使用 HTTPS" 选项
+   - 设置位置: SSL/TLS → 边缘证书
+
+========================================
+配置信息
+========================================
+
+协议: VLESS
+UUID: ${uuid}
+域名: ${domain}
+本地端口: ${port}
+传输: WebSocket
+路径: /
+TLS: 由 Argo 提供
+
+========================================
+EOF
+    
+    print_success "已生成 VLESS 节点链接"
+    echo ""
+    echo -e "${GREEN}【直连链接】${NC}"
+    echo "$link_direct"
+    echo ""
+    echo -e "${CYAN}【CF 优选 IP】${NC}"
+    echo "$link_cf"
+    echo ""
+    print_info "完整信息已保存到: ${LINK_DIR}/argo_node_${port}.txt"
+}
+
+# 生成 VMess 链接
+generate_vmess_links() {
+    local domain=$1
+    local uuid=$2
+    local tag=$3
+    local port=$4
+    
+    # 直连链接 (TLS)
+    local vmess_json_tls=$(cat <<EOF
 {
   "v": "2",
   "ps": "Argo-${tag}",
@@ -397,21 +470,202 @@ generate_argo_node_link() {
 }
 EOF
 )
-                local link="vmess://$(echo -n "$vmess_json" | base64 -w 0)"
-                echo "$link" > "${LINK_DIR}/argo_node_${local_port}.txt"
-                
-                print_success "已生成 VMess+WS+TLS 节点链接"
-                echo ""
-                echo -e "${GREEN}节点链接:${NC}"
-                echo "$link"
-            fi
-            ;;
-        *)
-            print_warning "协议 $protocol 暂不支持 Argo 隧道"
-            print_info "Argo 隧道支持: VLESS, VMess, Trojan (需配合 WebSocket)"
-            echo "https://${domain}" > "${LINK_DIR}/argo_node_${local_port}.txt"
-            ;;
-    esac
+    local link_direct="vmess://$(echo -n "$vmess_json_tls" | base64 -w 0)"
+    
+    # CF 优选 IP (TLS)
+    local vmess_json_cf=$(cat <<EOF
+{
+  "v": "2",
+  "ps": "Argo-${tag}-CF",
+  "add": "www.visa.com.sg",
+  "port": "443",
+  "id": "${uuid}",
+  "aid": "0",
+  "net": "ws",
+  "type": "none",
+  "host": "${domain}",
+  "path": "/",
+  "tls": "tls",
+  "sni": "${domain}"
+}
+EOF
+)
+    local link_cf="vmess://$(echo -n "$vmess_json_cf" | base64 -w 0)"
+    
+    # 非 TLS 链接
+    local vmess_json_notls=$(cat <<EOF
+{
+  "v": "2",
+  "ps": "Argo-${tag}-NoTLS",
+  "add": "${domain}",
+  "port": "80",
+  "id": "${uuid}",
+  "aid": "0",
+  "net": "ws",
+  "type": "none",
+  "host": "${domain}",
+  "path": "/",
+  "tls": ""
+}
+EOF
+)
+    local link_notls="vmess://$(echo -n "$vmess_json_notls" | base64 -w 0)"
+    
+    # 保存到文件
+    cat > "${LINK_DIR}/argo_node_${port}.txt" << EOF
+========================================
+Argo VMess 节点链接
+========================================
+
+【直连链接】(推荐 - 最稳定)
+${link_direct}
+
+【CF 优选 IP】(可能更快)
+${link_cf}
+
+【备用端口】(TLS)
+443 (推荐), 2053, 2083, 2087, 2096, 8443
+
+【非 TLS 链接】(80端口)
+${link_notls}
+
+【备用端口】(非TLS)
+80, 8080, 8880, 2052, 2082, 2086, 2095
+
+========================================
+使用说明
+========================================
+
+1. 直连链接:
+   - 最稳定可靠
+   - 直接使用 Argo 域名
+   - 推荐日常使用
+
+2. CF 优选 IP:
+   - 使用 www.visa.com.sg 作为连接地址
+   - 可能获得更快的速度
+   - 需要客户端支持 SNI
+
+3. 备用端口:
+   - 如果 443 端口被限制，可尝试其他端口
+   - 修改链接中的 port 字段即可
+
+4. 非 TLS 链接:
+   - 使用 80 端口，不加密传输
+   - 如果无法使用，请检查 CF 设置
+   - 关闭 "始终使用 HTTPS" 选项
+
+========================================
+配置信息
+========================================
+
+协议: VMess
+UUID: ${uuid}
+域名: ${domain}
+本地端口: ${port}
+传输: WebSocket
+路径: /
+TLS: 由 Argo 提供
+
+========================================
+EOF
+    
+    print_success "已生成 VMess 节点链接"
+    echo ""
+    echo -e "${GREEN}【直连链接】${NC}"
+    echo "$link_direct"
+    echo ""
+    echo -e "${CYAN}【CF 优选 IP】${NC}"
+    echo "$link_cf"
+    echo ""
+    print_info "完整信息已保存到: ${LINK_DIR}/argo_node_${port}.txt"
+}
+
+# 生成 Trojan 链接
+generate_trojan_links() {
+    local domain=$1
+    local password=$2
+    local tag=$3
+    local port=$4
+    
+    # 直连链接
+    local link_direct="trojan://${password}@${domain}:443?security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}"
+    
+    # CF 优选 IP 链接
+    local link_cf="trojan://${password}@www.visa.com.sg:443?security=tls&sni=${domain}&type=ws&host=${domain}&path=%2F#Argo-${tag}-CF"
+    
+    # 非 TLS 链接
+    local link_notls="trojan://${password}@${domain}:80?security=none&type=ws&host=${domain}&path=%2F#Argo-${tag}-NoTLS"
+    
+    # 保存到文件
+    cat > "${LINK_DIR}/argo_node_${port}.txt" << EOF
+========================================
+Argo Trojan 节点链接
+========================================
+
+【直连链接】(推荐 - 最稳定)
+${link_direct}
+
+【CF 优选 IP】(可能更快)
+${link_cf}
+
+【备用端口】(TLS)
+443 (推荐), 2053, 2083, 2087, 2096, 8443
+
+【非 TLS 链接】(80端口)
+${link_notls}
+
+【备用端口】(非TLS)
+80, 8080, 8880, 2052, 2082, 2086, 2095
+
+========================================
+使用说明
+========================================
+
+1. 直连链接:
+   - 最稳定可靠
+   - 直接使用 Argo 域名
+   - 推荐日常使用
+
+2. CF 优选 IP:
+   - 使用 www.visa.com.sg 作为连接地址
+   - 可能获得更快的速度
+   - 需要客户端支持 SNI
+
+3. 备用端口:
+   - 如果 443 端口被限制，可尝试其他端口
+   - TLS 端口: 443, 2053, 2083, 2087, 2096, 8443
+   - 非 TLS 端口: 80, 8080, 8880, 2052, 2082, 2086, 2095
+
+4. 非 TLS 链接:
+   - 使用 80 端口，不加密传输
+   - 如果无法使用，请检查 CF 设置
+   - 关闭 "始终使用 HTTPS" 选项
+
+========================================
+配置信息
+========================================
+
+协议: Trojan
+密码: ${password}
+域名: ${domain}
+本地端口: ${port}
+传输: WebSocket
+路径: /
+TLS: 由 Argo 提供
+
+========================================
+EOF
+    
+    print_success "已生成 Trojan 节点链接"
+    echo ""
+    echo -e "${GREEN}【直连链接】${NC}"
+    echo "$link_direct"
+    echo ""
+    echo -e "${CYAN}【CF 优选 IP】${NC}"
+    echo "$link_cf"
+    echo ""
+    print_info "完整信息已保存到: ${LINK_DIR}/argo_node_${port}.txt"
 }
 
 # Token 认证
@@ -487,12 +741,24 @@ EOF
     echo "$tunnel_domain" > "${ARGO_DIR}/domain.txt"
     chmod 600 "${ARGO_DIR}/token.txt"
     
+    print_success "Argo Tunnel (Token) 已启动"
+    echo ""
+    
     # 生成节点链接
     if [[ -n "$tunnel_domain" ]]; then
+        print_info "生成节点链接..."
+        echo ""
         generate_argo_node_link "$tunnel_domain" "$local_port"
         
         # 保存信息
         mkdir -p "${LINK_DIR}"
+        
+        # 读取生成的节点链接
+        local node_link=""
+        if [[ -f "${LINK_DIR}/argo_node_${local_port}.txt" ]]; then
+            node_link=$(cat "${LINK_DIR}/argo_node_${local_port}.txt")
+        fi
+        
         cat > "${LINK_DIR}/argo_token_${local_port}.txt" << EOF
 ========================================
 Argo Tunnel (Token) 信息
@@ -502,19 +768,26 @@ Argo Tunnel (Token) 信息
 完整地址: https://${tunnel_domain}
 
 节点链接:
-$(cat "${LINK_DIR}/argo_node_${local_port}.txt" 2>/dev/null || echo "未生成节点链接")
+${node_link}
 
 使用方法:
 1. 确保本地服务运行在端口 ${local_port}
 2. 通过 https://${tunnel_domain} 访问
 3. 使用上方节点链接导入客户端
+
+注意事项:
+- 本地端口 ${local_port} 必须有服务运行
+- 如果看到 "connection refused" 错误，请先启动本地服务
+- 使用命令检查: ss -tuln | grep ${local_port}
 ========================================
 EOF
+        
         echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
         cat "${LINK_DIR}/argo_token_${local_port}.txt"
+        echo -e "${CYAN}═══════════════════════════════════════════════${NC}"
     fi
     
-    print_success "Argo Tunnel (Token) 已启动"
     echo ""
     read -p "按回车键继续..."
 }
