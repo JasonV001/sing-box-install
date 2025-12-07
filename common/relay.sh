@@ -1023,12 +1023,22 @@ install_gost() {
     
     # 检测系统架构
     local arch=$(uname -m)
-    local gost_arch
+    local gost_arch_old  # 旧格式用 (linux-amd64)
+    local gost_arch_new  # 新格式用 (linux_amd64)
     
     case $arch in
-        x86_64) gost_arch="linux-amd64" ;;
-        aarch64|arm64) gost_arch="linux-arm64" ;;
-        armv7l) gost_arch="linux-armv7" ;;
+        x86_64) 
+            gost_arch_old="linux-amd64"
+            gost_arch_new="linux_amd64"
+            ;;
+        aarch64|arm64) 
+            gost_arch_old="linux-arm64"
+            gost_arch_new="linux_arm64"
+            ;;
+        armv7l) 
+            gost_arch_old="linux-armv7"
+            gost_arch_new="linux_armv7"
+            ;;
         *) 
             print_error "不支持的架构: $arch"
             echo ""
@@ -1062,13 +1072,13 @@ install_gost() {
     # 使用字符串比较避免算术错误
     case "$version_num" in
         2.1[2-9].*|2.[2-9]*.*|[3-9].*.*|[1-9][0-9].*.*)
-            # 新格式 (v2.12.0+)
-            filename="gost_${version_num}_${gost_arch}.tar.gz"
+            # 新格式 (v2.12.0+): 使用下划线
+            filename="gost_${version_num}_${gost_arch_new}.tar.gz"
             is_tarball=true
             ;;
         *)
-            # 旧格式 (v2.11.x 及更早)
-            filename="gost-${gost_arch}-${version_num}.gz"
+            # 旧格式 (v2.11.x 及更早): 使用连字符
+            filename="gost-${gost_arch_old}-${version_num}.gz"
             is_tarball=false
             ;;
     esac
