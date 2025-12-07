@@ -241,6 +241,19 @@ add_relay_rule() {
 
 # iptables 端口转发
 add_iptables_relay() {
+    # 检查 root 权限
+    if [[ $EUID -ne 0 ]]; then
+        clear
+        print_error "iptables 转发需要 root 权限"
+        echo ""
+        echo -e "${YELLOW}请使用以下方式之一运行脚本:${NC}"
+        echo "  1. sudo bash $0"
+        echo "  2. su root 后运行"
+        echo ""
+        read -p "按回车键返回..."
+        return 1
+    fi
+    
     clear
     print_info "配置 iptables 端口转发"
     echo ""
@@ -307,14 +320,16 @@ add_iptables_relay() {
         
         if command -v iptables &>/dev/null; then
             print_success "iptables 安装完成"
+            echo ""
+            print_info "继续配置 iptables 转发规则..."
+            sleep 1
         else
             print_error "iptables 安装失败"
             read -p "按回车键继续..."
             return 1
         fi
-    else
-        print_success "iptables 已安装"
     fi
+    
     echo ""
     
     # 检查端口是否被占用
@@ -367,6 +382,19 @@ add_iptables_relay() {
 
 # DNAT 转发
 add_dnat_relay() {
+    # 检查 root 权限
+    if [[ $EUID -ne 0 ]]; then
+        clear
+        print_error "DNAT 转发需要 root 权限"
+        echo ""
+        echo -e "${YELLOW}请使用以下方式之一运行脚本:${NC}"
+        echo "  1. sudo bash $0"
+        echo "  2. su root 后运行"
+        echo ""
+        read -p "按回车键返回..."
+        return 1
+    fi
+    
     clear
     print_info "配置 DNAT 转发"
     echo ""
@@ -418,7 +446,12 @@ add_dnat_relay() {
             return 1
         fi
         print_success "iptables 安装完成"
+        echo ""
+        print_info "继续配置 DNAT 转发规则..."
+        sleep 1
     fi
+    
+    echo ""
     
     # 启用IP转发
     if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf 2>/dev/null; then
